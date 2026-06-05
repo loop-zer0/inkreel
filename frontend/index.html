@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>InkReel — AI 小说转剧本</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <!-- 顶部工具栏 -->
+    <header class="toolbar">
+        <h1 class="logo">🎬 InkReel</h1>
+        <div class="controls">
+            <label class="mode-switch" title="切换在线/离线模式">
+                <input type="checkbox" id="modeToggle">
+                <span class="mode-label" id="modeLabel">🌐 云端</span>
+            </label>
+            <span id="statusEl" class="status idle">⏸ 就绪</span>
+        </div>
+    </header>
+
+    <!-- 主内容区 -->
+    <div class="main-layout">
+        <!-- 左侧：上传区 -->
+        <aside class="upload-panel">
+            <div class="upload-zone" id="uploadZone">
+                <div class="upload-icon">📂</div>
+                <p class="upload-hint">拖拽 .txt 文件到此处<br>或点击选择</p>
+                <p class="upload-sub">支持 UTF-8 / GBK 编码，≥3 章</p>
+                <input type="file" id="fileInput" accept=".txt,.text,.md" hidden>
+            </div>
+
+            <div class="file-info" id="fileInfo" style="display:none">
+                <div class="file-name" id="fileName"></div>
+                <div class="file-size" id="fileSize"></div>
+                <div class="file-chapters" id="fileChapters"></div>
+            </div>
+
+            <div class="meta-inputs">
+                <input type="text" id="titleInput" class="meta-input" placeholder="作品名（可选）">
+                <input type="text" id="authorInput" class="meta-input" placeholder="原作者（可选）">
+            </div>
+
+            <button id="btnConvert" class="btn btn-primary" disabled>▶ 开始转换</button>
+
+            <div class="progress-area" id="progressArea" style="display:none">
+                <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+                <div class="progress-text" id="progressText">处理中...</div>
+            </div>
+
+            <div class="stats-area" id="statsArea" style="display:none">
+                <div class="stat"><span class="stat-val" id="statChapters">0</span> 章</div>
+                <div class="stat"><span class="stat-val" id="statChars">0</span> 人物</div>
+                <div class="stat"><span class="stat-val" id="statScenes">0</span> 场景</div>
+            </div>
+
+            <button id="btnDownload" class="btn btn-download" style="display:none">⬇ 下载 YAML 剧本</button>
+        </aside>
+
+        <!-- 右侧：预览区 + Schema 文档 -->
+        <section class="preview-panel">
+            <div class="preview-tabs">
+                <button class="preview-tab active" data-tab="yaml">📜 YAML 预览</button>
+                <button class="preview-tab" data-tab="schema">📋 Schema 文档</button>
+            </div>
+
+            <div class="preview-content" id="previewYaml">
+                <div class="preview-placeholder" id="previewPlaceholder">
+                    <p>📖 上传小说后，生成的 YAML 剧本将在这里预览</p>
+                    <p class="hint">支持语法高亮、代码折叠</p>
+                </div>
+                <pre class="yaml-output" id="yamlOutput" style="display:none"></pre>
+            </div>
+
+            <div class="preview-content" id="previewSchema" style="display:none">
+                <div class="schema-doc" id="schemaDoc">加载中...</div>
+            </div>
+        </section>
+    </div>
+
+    <!-- 验证结果提示 -->
+    <div class="toast" id="toast"></div>
+
+    <script src="/static/js/app.js"></script>
+</body>
+</html>
