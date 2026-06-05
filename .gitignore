@@ -22,3 +22,10 @@ server.log
 # Output
 output/
 *.yaml.bak
+
+# Sample novels (large, from Project Gutenberg)
+sample/pride_and_prejudice.txt
+sample/dracula.txt
+sample/frankenstein.txt
+sample/great_expectations.txt
+sample/alice_in_wonderland.txt
