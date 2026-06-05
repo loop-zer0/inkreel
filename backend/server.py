@@ -23,6 +23,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from config import (HOST, PORT, MAX_FILE_SIZE_MB,
                     get_llm_config, set_llm_mode, LLM_MODE)
 from chapter_parser import split_chapters, detect_chapter_format
+from format_reader import extract_text
 from extractor import extract_characters
 from converter import convert_all
 from merger import merge
@@ -91,9 +92,15 @@ async def convert(file: UploadFile = File(...), title: str = Form(""), author: s
     或:
       { "status": "error", "message": "..." }
     """
-    # ── 校验 ──
-    if not file.filename or not file.filename.endswith(('.txt', '.text', '.md')):
-        return JSONResponse({"status": "error", "message": "请上传 .txt 文本文件"}, status_code=400)
+    # ── 校验格式 ──
+    fn = file.filename or "untitled.txt"
+    ext = fn.rsplit(".", 1)[-1].lower() if "." in fn else ""
+    supported = ("txt", "text", "md", "markdown", "docx", "epub")
+    if ext not in supported:
+        return JSONResponse({
+            "status": "error",
+            "message": f"不支持 .{ext} 格式，支持: {', '.join(supported)}"
+        }, status_code=400)
 
     content = await file.read()
     file_size_mb = len(content) / (1024 * 1024)
@@ -104,12 +111,12 @@ async def convert(file: UploadFile = File(...), title: str = Form(""), author: s
         }, status_code=400)
 
     try:
-        text = content.decode("utf-8")
-    except UnicodeDecodeError:
-        try:
-            text = content.decode("gbk")
-        except UnicodeDecodeError:
-            return JSONResponse({"status": "error", "message": "文件编码不支持，请使用 UTF-8 或 GBK"}, status_code=400)
+        text = extract_text(content, fn)
+    except ValueError as e:
+        return JSONResponse({"status": "error", "message": str(e)}, status_code=400)
+    except Exception as e:
+        logger.error(f"[Format] 解析失败: {e}")
+        return JSONResponse({"status": "error", "message": f"文件解析失败: {e}"}, status_code=400)
 
     text = text.strip()
     if len(text) < 200:

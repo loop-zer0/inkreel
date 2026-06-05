@@ -83,8 +83,8 @@
     });
 
     function handleFile(file) {
-        if (!file.name.endsWith('.txt') && !file.name.endsWith('.text') && !file.name.endsWith('.md')) {
-            showToast('请上传 .txt 文本文件', 'error');
+        if (!file.name.match(/\.(txt|text|md|markdown|docx|epub)$/i)) {
+            showToast('请上传 .txt / .md / .docx / .epub 文件', 'error');
             return;
         }
         selectedFile = file;
