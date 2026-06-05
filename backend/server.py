@@ -8,6 +8,7 @@ API:
 """
 
 import os
+import re
 import json
 import logging
 import asyncio
@@ -154,11 +155,22 @@ async def convert(file: UploadFile = File(...), title: str = Form(""), author: s
     # ── 步骤 6: 输出 YAML ──
     yaml_str = dump_yaml(script)
 
-    logger.info(f"[Convert] 完成! {len(script['scenes'])} 场景, {len(script['characters'])} 人物")
+    # 保存到 output/ 目录
+    output_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "output")
+    os.makedirs(output_dir, exist_ok=True)
+    safe_title = re.sub(r'[\\/:*?"<>|]', '_', script["meta"].get("title", "script"))
+    out_filename = f"{safe_title}.yaml"
+    out_path = os.path.join(output_dir, out_filename)
+    with open(out_path, "w", encoding="utf-8") as f:
+        f.write(yaml_str)
+
+    logger.info(f"[Convert] 完成! {len(script['scenes'])} 场景 → {out_path}")
 
     return {
         "status": "ok",
         "yaml": yaml_str,
+        "output_file": out_path,
+        "output_filename": out_filename,
         "meta": script["meta"],
         "stats": {
             "chapters": len(chapters),
@@ -183,11 +195,14 @@ async def get_schema_doc():
     return {"content": "# Schema 文档\n\n（尚未生成）"}
 
 
-@app.get("/api/download")
-async def download_yaml(yaml_str: str = ""):
-    """下载 YAML 文件（GET 方式，yaml_str 通过 query param 传递）"""
-    # 实际下载通过前端 blob 实现，这个端点保留做服务端下载
-    return JSONResponse({"status": "error", "message": "请从预览区直接下载"}, status_code=400)
+@app.get("/api/download/{filename}")
+async def download_yaml(filename: str):
+    """服务端下载 YAML 文件"""
+    output_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "output")
+    file_path = os.path.join(output_dir, filename)
+    if not os.path.exists(file_path):
+        return JSONResponse({"status": "error", "message": "文件不存在"}, status_code=404)
+    return FileResponse(file_path, media_type="text/yaml", filename=filename)
 
 
 if __name__ == "__main__":

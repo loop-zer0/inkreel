@@ -162,6 +162,13 @@
             // 更新文件信息中的章节数
             fileChapters.textContent = data.stats.chapters + ' 章';
 
+            // 显示输出文件路径
+            if (data.output_file) {
+                const pathEl = document.getElementById('outputPath');
+                pathEl.textContent = 'Saved: ' + data.output_file;
+                pathEl.style.display = '';
+            }
+
             btnDownload.style.display = '';
             btnConvert.disabled = false;
 
