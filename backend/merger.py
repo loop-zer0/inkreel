@@ -54,9 +54,17 @@ def merge(characters: list[dict], all_scenes: list[dict]) -> dict:
             s["transitions_to"] = all_scenes[i + 1]["id"]
 
     # ── 3. 构建 meta ──
-    chapter_nums = sorted(set(
-        s.get("source_chapter", 0) for s in all_scenes
-    ))
+    raw_nums = set()
+    for s in all_scenes:
+        cn = s.get("source_chapter", 0)
+        raw_nums.add(str(cn))
+    # 按数值排序（处理 "1", "2", "3.1" 等混合格式）
+    def _sort_key(x):
+        try:
+            return float(x)
+        except ValueError:
+            return 0.0
+    chapter_nums = sorted(raw_nums, key=_sort_key)
     source_chapters = []
     for cn in chapter_nums:
         try:
