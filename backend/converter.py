@@ -25,7 +25,7 @@ def convert_chapter(chapter: dict, characters: list[dict], chapter_offset: int =
     Returns:
         [{"id": "SCENE_01", "source_chapter": 1, ...}, ...]
     """
-    if not LLM_API_KEY:
+    if LLM_MODE == "online" and not get_llm_config()[1]:
         logger.error("[Converter] 未配置 API Key")
         return []
 
