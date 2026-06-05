@@ -84,7 +84,8 @@ async def switch_mode(req: dict):
 
 
 @app.post("/api/convert")
-async def convert(file: UploadFile = File(...), title: str = Form(""), author: str = Form("")):
+async def convert(file: UploadFile = File(...), title: str = Form(""), author: str = Form(""),
+                   chapters_json: str = Form("")):
     """上传小说文本，返回生成的剧本 YAML。
 
     返回 JSON:
@@ -135,6 +136,21 @@ async def convert(file: UploadFile = File(...), title: str = Form(""), author: s
         }, status_code=400)
 
     logger.info(f"[Convert] 检测到 {len(chapters)} 章, 共 {sum(c['char_count'] for c in chapters)} 字")
+
+    # ── 章节筛选（用户选择部分章节转换）──
+    if chapters_json:
+        try:
+            selected = json.loads(chapters_json)
+            if isinstance(selected, list) and len(selected) > 0:
+                before = len(chapters)
+                # 按章节编号匹配（支持 int 和 str）
+                selected_set = {str(s) for s in selected}
+                chapters = [c for c in chapters if str(c["number"]) in selected_set]
+                logger.info(f"[Convert] 用户选择 {len(chapters)}/{before} 章")
+                if len(chapters) < 1:
+                    return JSONResponse({"status": "error", "message": "未选择任何有效章节"}, status_code=400)
+        except (json.JSONDecodeError, TypeError):
+            pass
 
     # ── 步骤 2: 人物提取 ──
     characters = await asyncio.to_thread(extract_characters, chapters)
@@ -189,6 +205,72 @@ async def convert(file: UploadFile = File(...), title: str = Form(""), author: s
         "warnings": [],
         "errors": validation_errors,
     }
+
+
+@app.post("/api/preview")
+async def preview(file: UploadFile = File(...)):
+    """上传文件 → 返回章节列表 + 体裁检测（不转换）"""
+    fn = file.filename or "untitled.txt"
+    ext = fn.rsplit(".", 1)[-1].lower() if "." in fn else ""
+    supported = ("txt", "text", "md", "markdown", "docx", "epub")
+    if ext not in supported:
+        return JSONResponse({"status": "error", "message": f"不支持 .{ext}"}, status_code=400)
+
+    content = await file.read()
+    try:
+        text = extract_text(content, fn)
+    except Exception as e:
+        return JSONResponse({"status": "error", "message": str(e)}, status_code=400)
+
+    chapters = split_chapters(text)
+    if not chapters:
+        return JSONResponse({"status": "error", "message": "未检测到章节"}, status_code=400)
+
+    # 体裁检测：取开头 1000 字给 LLM 判断
+    genre = _detect_genre(text[:1500])
+
+    return {
+        "status": "ok",
+        "filename": fn,
+        "total_chars": len(text),
+        "chapter_count": len(chapters),
+        "genre": genre,
+        "chapters": [
+            {"num": c["number"], "title": c["title"], "chars": c["char_count"]}
+            for c in chapters
+        ],
+    }
+
+
+def _detect_genre(text_sample: str) -> str:
+    """快速体裁检测（取关键词，不调 LLM）"""
+    import re
+    keywords = {
+        "武侠": ["剑", "江湖", "门派", "内力", "武林", "侠", "功法"],
+        "科幻": ["飞船", "星球", "外星", "AI", "机器人", "量子", "基因"],
+        "奇幻": ["魔法", "龙", "精灵", "咒语", "王国", "巫师", "魔"],
+        "悬疑": ["凶手", "侦探", "尸体", "密室", "线索", "谋杀"],
+        "爱情": ["爱情", "恋爱", "婚礼", "求婚", "未婚", "情侣"],
+        "恐怖": ["鬼", "幽灵", "诅咒", "血", "恐怖", "噩梦"],
+        "历史": ["皇帝", "将军", "战争", "朝代", "陛下", "起义"],
+        "文学经典": [],
+    }
+    scores = {}
+    for genre, words in keywords.items():
+        score = sum(text_sample.lower().count(w.lower()) for w in words)
+        if score > 0:
+            scores[genre] = score
+
+    if scores:
+        return max(scores, key=scores.get)
+
+    # 检查是否英文经典文学
+    classic_markers = ["CHAPTER", "Mr.", "Mrs.", "Miss", "Lady", "Lord", "gentleman"]
+    classic_score = sum(text_sample.count(m) for m in classic_markers)
+    if classic_score > 3:
+        return "文学经典"
+
+    return "通用"
 
 
 @app.get("/api/schema")

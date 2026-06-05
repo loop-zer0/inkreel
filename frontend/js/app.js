@@ -26,6 +26,14 @@
     let selectedFile = null;
     let currentYaml = '';
     let isOffline = false;
+    let chapterData = [];  // from /api/preview
+    let selectedChapters = [];  // checked chapter numbers
+
+    const chapterSelect = document.getElementById('chapterSelect');
+    const chapterList = document.getElementById('chapterList');
+    const chapterCount = document.getElementById('chapterCount');
+    const chkAll = document.getElementById('chkAll');
+    const fileGenre = document.getElementById('fileGenre');
 
     // ── 在线/离线切换 ──
     async function initMode() {
@@ -90,16 +98,94 @@
         selectedFile = file;
         fileName.textContent = file.name;
         fileSize.textContent = (file.size / 1024).toFixed(1) + ' KB';
-        fileChapters.textContent = '章节检测中...';
+        fileChapters.textContent = '检测中...';
+        fileGenre.textContent = '';
         fileInfo.style.display = '';
         uploadZone.classList.add('has-file');
-        btnConvert.disabled = false;
-        // 重置预览
+        // 重置
         yamlOutput.style.display = 'none';
         previewPlaceholder.style.display = '';
         statsArea.style.display = 'none';
         btnDownload.style.display = 'none';
         progressArea.style.display = 'none';
+        chapterSelect.style.display = 'none';
+        btnConvert.disabled = true;
+
+        // 调用预览 API 获取章节列表
+        previewFile(file);
+    }
+
+    async function previewFile(file) {
+        const formData = new FormData();
+        formData.append('file', file);
+        try {
+            const resp = await fetch('/api/preview', { method: 'POST', body: formData });
+            const data = await resp.json();
+            if (data.status !== 'ok') {
+                showToast(data.message || '预览失败', 'error');
+                fileChapters.textContent = '检测失败';
+                return;
+            }
+            chapterData = data.chapters;
+            selectedChapters = data.chapters.map(c => c.num);
+            fileChapters.textContent = data.chapter_count + ' 章 · ' + formatSize(data.total_chars);
+            fileGenre.textContent = '体裁: ' + (data.genre || '未知');
+            renderChapterList();
+            btnConvert.disabled = false;
+        } catch (e) {
+            showToast('预览请求失败', 'error');
+            fileChapters.textContent = '请求失败';
+        }
+    }
+
+    function renderChapterList() {
+        chapterList.innerHTML = chapterData.map((ch, i) => {
+            const checked = selectedChapters.includes(ch.num);
+            return '<label class="chapter-item' + (checked ? ' checked' : '') + '">' +
+                '<input type="checkbox" class="chk-chapter" data-num="' + ch.num + '" ' +
+                (checked ? 'checked' : '') + '>' +
+                '<span class="ch-num">#' + ch.num + '</span>' +
+                '<span class="ch-title">' + escapeHtml(ch.title) + '</span>' +
+                '<span class="ch-chars">' + formatSize(ch.chars) + '</span>' +
+                '</label>';
+        }).join('');
+
+        chapterCount.textContent = selectedChapters.length + ' / ' + chapterData.length + ' 章';
+        chapterSelect.style.display = '';
+
+        // 全选复选框
+        chkAll.checked = selectedChapters.length === chapterData.length;
+        chkAll.indeterminate = selectedChapters.length > 0 && selectedChapters.length < chapterData.length;
+
+        // 事件绑定
+        chkAll.onclick = () => {
+            selectedChapters = chkAll.checked ? chapterData.map(c => c.num) : [];
+            renderChapterList();
+        };
+
+        chapterList.querySelectorAll('.chk-chapter').forEach(cb => {
+            cb.onchange = () => {
+                const num = parseInt(cb.dataset.num);
+                if (cb.checked) {
+                    if (!selectedChapters.includes(num)) selectedChapters.push(num);
+                } else {
+                    selectedChapters = selectedChapters.filter(n => n !== num);
+                }
+                renderChapterList();
+            };
+        });
+    }
+
+    function formatSize(chars) {
+        if (chars >= 10000) return (chars / 10000).toFixed(1) + '万';
+        if (chars >= 1000) return (chars / 1000).toFixed(1) + 'k';
+        return chars + '';
+    }
+
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
     }
 
     // ── 转换 ──
@@ -116,6 +202,9 @@
         formData.append('file', selectedFile);
         if (titleInput.value.trim()) formData.append('title', titleInput.value.trim());
         if (authorInput.value.trim()) formData.append('author', authorInput.value.trim());
+        if (selectedChapters.length > 0 && selectedChapters.length < chapterData.length) {
+            formData.append('chapters_json', JSON.stringify(selectedChapters));
+        }
 
         try {
             const resp = await fetch('/api/convert', {
