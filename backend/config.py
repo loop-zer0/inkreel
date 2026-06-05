@@ -39,11 +39,22 @@ MAX_FILE_SIZE_MB = 10
 MAX_CHAPTER_LENGTH_CHARS = 6000  # 单章超过此长度则分段处理
 CHAPTER_SEGMENT_SIZE = 3000       # 每段约 3000 字
 
-# 章节识别正则（中英文）
+# 章节识别正则（中英文 + 罗马数字）
 CHAPTER_PATTERNS = [
-    r'第[零一二三四五六七八九十百千\d]+章',   # 第X章
-    r'Chapter\s+\d+',                        # Chapter X
+    # 中文
+    r'第[零一二三四五六七八九十百千\d]+章',
+    r'第[零一二三四五六七八九十百千\d]+回',
+    r'第[零一二三四五六七八九十百千\d]+节',
+    # 英文: Chapter + 阿拉伯数字
+    r'[Cc]hapter\s+\d+',
     r'CHAPTER\s+\d+',
-    r'第[零一二三四五六七八九十百千\d]+回',   # 第X回
-    r'第[零一二三四五六七八九十百千\d]+节',   # 第X节
+    # 英文: Chapter + 罗马数字 (I, II, III, IV, V, VI, VII, VIII, IX, X, XI...)
+    r'[Cc]hapter\s+[IVX]+\.?',
+    r'CHAPTER\s+[IVX]+\.?',
+    # 英文: 书信体 (Letter 1, Letter I)
+    r'[Ll]etter\s+(\d+|[IVX]+)\.?',
+    # 英文: 卷/部分 (Part I, Book I, Volume I)
+    r'[Pp]art\s+(\d+|[IVX]+)\.?',
+    r'[Bb]ook\s+(\d+|[IVX]+)\.?',
+    r'[Vv]olume\s+(\d+|[IVX]+)\.?',
 ]
