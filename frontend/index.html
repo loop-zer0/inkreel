@@ -4,94 +4,219 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>InkReel — AI 小说转剧本</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.ico">
     <link rel="stylesheet" href="/static/css/style.css">
 </head>
 <body>
-    <!-- 顶部工具栏 -->
+    <!-- 粒子背景 -->
+    <canvas id="particleCanvas"></canvas>
+
+    <!-- 顶栏 -->
     <header class="toolbar">
-        <h1 class="logo">🎬 InkReel</h1>
+        <span class="logo">InkReel</span>
+        <span class="logo-dot">·</span>
+        <span class="logo-sub">小说转剧本</span>
         <div class="controls">
-            <label class="mode-switch" title="切换在线/离线模式">
+            <label class="mode-switch" title="在线 / 离线">
                 <input type="checkbox" id="modeToggle">
-                <span class="mode-label" id="modeLabel">🌐 云端</span>
+                <span class="mode-label" id="modeLabel">云端</span>
             </label>
-            <span id="statusEl" class="status idle">⏸ 就绪</span>
+            <span id="statusEl" class="status idle">就绪</span>
+            <button class="btn-xs" id="btnLogout" title="退出登录" style="margin-left:8px">退出</button>
         </div>
     </header>
 
-    <!-- 主内容区 -->
+    <!-- 主布局：三栏 -->
     <div class="main-layout">
-        <!-- 左侧：上传区 -->
-        <aside class="upload-panel">
-            <div class="upload-zone" id="uploadZone">
-                <div class="upload-icon">📂</div>
-                <p class="upload-hint">拖拽 .txt 文件到此处<br>或点击选择</p>
-                <p class="upload-sub">支持 .txt / .md / .docx / .epub，≥3 章</p>
+        <!-- 左栏：仓库 -->
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <h2 class="sidebar-title">仓库</h2>
+                <button class="btn-icon" id="btnRefresh" title="刷新">↻</button>
+            </div>
+
+            <div class="drop-zone" id="dropZone">
+                <span class="upload-icon">+</span>
+                <p class="upload-hint">拖入小说文件<br>或点击浏览</p>
+                <p class="upload-sub">.txt .md .docx .epub</p>
+                <button class="btn-primary" id="btnImport">导入</button>
                 <input type="file" id="fileInput" accept=".txt,.text,.md,.docx,.epub" hidden>
             </div>
 
-            <div class="file-info" id="fileInfo" style="display:none">
-                <div class="file-name" id="fileName"></div>
-                <div class="file-size" id="fileSize"></div>
-                <div class="file-chapters" id="fileChapters"></div>
-                <div class="file-genre" id="fileGenre"></div>
+            <div class="library-list" id="libraryList">
+                <div class="library-empty">加载中...</div>
             </div>
-
-            <!-- 章节选择 -->
-            <div class="chapter-select" id="chapterSelect" style="display:none">
-                <div class="chapter-select-header">
-                    <label class="chk-all"><input type="checkbox" id="chkAll" checked> 全选</label>
-                    <span class="chapter-count" id="chapterCount"></span>
-                </div>
-                <div class="chapter-list" id="chapterList"></div>
-            </div>
-
-            <div class="meta-inputs">
-                <input type="text" id="titleInput" class="meta-input" placeholder="作品名（可选）">
-                <input type="text" id="authorInput" class="meta-input" placeholder="原作者（可选）">
-            </div>
-
-            <button id="btnConvert" class="btn btn-primary" disabled>▶ 开始转换</button>
-
-            <div class="progress-area" id="progressArea" style="display:none">
-                <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
-                <div class="progress-text" id="progressText">处理中...</div>
-            </div>
-
-            <div class="stats-area" id="statsArea" style="display:none">
-                <div class="stat"><span class="stat-val" id="statChapters">0</span> 章</div>
-                <div class="stat"><span class="stat-val" id="statChars">0</span> 人物</div>
-                <div class="stat"><span class="stat-val" id="statScenes">0</span> 场景</div>
-            </div>
-
-            <button id="btnDownload" class="btn btn-download" style="display:none">⬇ 下载 YAML 剧本</button>
-            <div class="output-path" id="outputPath" style="display:none"></div>
         </aside>
 
-        <!-- 右侧：预览区 + Schema 文档 -->
-        <section class="preview-panel">
-            <div class="preview-tabs">
-                <button class="preview-tab active" data-tab="yaml">📜 YAML 预览</button>
-                <button class="preview-tab" data-tab="schema">📋 Schema 文档</button>
-            </div>
+        <!-- 拖拽手柄：左栏 ↔ 中栏 -->
+        <div class="resize-handle" id="resizeLeft" title="拖拽调节宽度"></div>
 
+        <!-- 中栏：YAML 预览 + Schema -->
+        <section class="preview-section">
+            <div class="preview-tabs">
+                <button class="preview-tab active" data-tab="yaml">剧本</button>
+                <button class="preview-tab" data-tab="schema">格式说明</button>
+                <span class="preview-tab-spacer"></span>
+                <button class="btn-icon" id="btnEditYaml" style="display:none" title="编辑">✎</button>
+                <button class="btn-icon" id="btnDownload" style="display:none" title="下载">↓</button>
+            </div>
             <div class="preview-content" id="previewYaml">
                 <div class="preview-placeholder" id="previewPlaceholder">
-                    <p>📖 上传小说后，生成的 YAML 剧本将在这里预览</p>
-                    <p class="hint">支持语法高亮、代码折叠</p>
+                    <p>从仓库选择一本小说</p>
+                    <p class="hint">转换章节后可在此查看剧本</p>
                 </div>
                 <pre class="yaml-output" id="yamlOutput" style="display:none"></pre>
+                <textarea class="yaml-editor" id="yamlEditor" style="display:none" spellcheck="false"></textarea>
             </div>
-
             <div class="preview-content" id="previewSchema" style="display:none">
                 <div class="schema-doc" id="schemaDoc">加载中...</div>
             </div>
         </section>
+
+        <!-- 拖拽手柄：中栏 ↔ 右栏 -->
+        <div class="resize-handle" id="resizeRight" title="拖拽调节宽度"></div>
+
+        <!-- 右栏：详情 + 章节操作 -->
+        <aside class="detail-section" id="detailSidebar">
+            <div id="placeholderDetail" class="detail-placeholder">
+                <p>打开一本小说开始</p>
+            </div>
+            <div id="detailPanel" class="detail-panel" style="display:none">
+                <div class="detail-header">
+                    <div style="flex:1;min-width:0">
+                        <div id="detailMetaView">
+                            <h3 id="detailTitle" class="detail-title"></h3>
+                            <p id="detailMeta" class="detail-meta"></p>
+                        </div>
+                        <div id="detailMetaEdit" style="display:none" class="meta-edit-row">
+                            <label class="meta-edit-label">书名</label>
+                            <input id="editTitle" class="meta-edit-input" placeholder="输入书名">
+                            <label class="meta-edit-label">作者</label>
+                            <input id="editAuthor" class="meta-edit-input" placeholder="输入作者">
+                            <label class="meta-edit-label">类型</label>
+                            <input id="editGenre" class="meta-edit-input meta-edit-short" placeholder="如：玄幻">
+                            <button class="btn-xs" id="btnSaveMeta">保存</button>
+                            <button class="btn-xs" id="btnCancelMeta">取消</button>
+                        </div>
+                    </div>
+                    <div style="display:flex;gap:4px;align-items:center;flex-shrink:0">
+                        <button class="btn-icon" id="btnEditMeta" style="display:none" title="编辑信息">✎</button>
+                        <button class="btn-icon" id="btnCloseDetail" title="关闭">×</button>
+                    </div>
+                </div>
+                <div class="chapter-select" id="chapterSelect">
+                    <div class="chapter-select-header">
+                        <span class="chapter-count" id="chapterCount"></span>
+                    </div>
+                    <div class="chapter-list" id="chapterList"></div>
+                </div>
+            </div>
+        </aside>
     </div>
 
-    <!-- 验证结果提示 -->
+    <!-- 导入模态框 -->
+    <div class="modal-overlay" id="importModal" style="display:none">
+        <div class="modal-box">
+            <h2 class="modal-title">导入小说</h2>
+            <div class="modal-body">
+                <div class="import-info">
+                    <p>文件：<strong id="importFileName"></strong></p>
+                    <p>章节：<span id="importChapterCount"></span></p>
+                    <p>类型：<span id="importGenre"></span></p>
+                </div>
+                <label class="modal-label">书名</label>
+                <input type="text" id="importTitle" class="modal-input" placeholder="小说标题（选填）">
+            </div>
+            <div class="modal-actions">
+                <button class="btn-primary" id="btnConfirmImport">确认导入</button>
+                <button class="btn-secondary" id="btnCancelImport">取消</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast -->
     <div class="toast" id="toast"></div>
 
+    <!-- 粒子脚本 -->
+    <script>
+    (function() {
+        const canvas = document.getElementById('particleCanvas');
+        const ctx = canvas.getContext('2d');
+        let particles = [];
+        let w, h;
+
+        function resize() {
+            w = canvas.width = window.innerWidth;
+            h = canvas.height = window.innerHeight;
+        }
+        resize();
+        window.addEventListener('resize', resize);
+
+        const COUNT = 55;
+        for (let i = 0; i < COUNT; i++) {
+            particles.push({
+                x: Math.random() * w,
+                y: Math.random() * h,
+                r: Math.random() * 1.4 + 0.4,
+                vx: (Math.random() - 0.5) * 0.12,
+                vy: (Math.random() - 0.5) * 0.12 - 0.05,
+                opacity: Math.random() * 0.22 + 0.04,
+            });
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, w, h);
+            for (const p of particles) {
+                p.x += p.vx;
+                p.y += p.vy;
+                if (p.x < -10) p.x = w + 10;
+                if (p.x > w + 10) p.x = -10;
+                if (p.y < -10) p.y = h + 10;
+                if (p.y > h + 10) p.y = -10;
+
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+                ctx.fillStyle = `rgba(91,122,110,${p.opacity})`;
+                ctx.fill();
+            }
+            requestAnimationFrame(draw);
+        }
+        draw();
+
+        // 鼠标吸引（轻触推开，像微风拂过）
+        let mx = -100, my = -100;
+        window.addEventListener('mousemove', e => { mx = e.clientX; my = e.clientY; });
+
+        function attract() {
+            for (const p of particles) {
+                const dx = mx - p.x;
+                const dy = my - p.y;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+                if (dist < 120 && dist > 1) {
+                    const force = 0.015 / (dist * 0.05);
+                    p.vx += dx * force;
+                    p.vy += dy * force;
+                }
+                // 阻尼
+                p.vx *= 0.9995;
+                p.vy *= 0.9995;
+                // 限制速度
+                const speed = Math.sqrt(p.vx * p.vx + p.vy * p.vy);
+                if (speed > 0.3) {
+                    p.vx = (p.vx / speed) * 0.3;
+                    p.vy = (p.vy / speed) * 0.3;
+                }
+            }
+            requestAnimationFrame(attract);
+        }
+        attract();
+    })();
+    </script>
+
+    <script src="/static/js/auth.js"></script>
+    <script src="/static/js/utils.js"></script>
+    <script src="/static/js/api.js"></script>
+    <script src="/static/js/views.js"></script>
     <script src="/static/js/app.js"></script>
 </body>
 </html>

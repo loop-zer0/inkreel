@@ -1,354 +1,737 @@
-/** Novel2Script — 前端应用 */
-(() => {
-    // ── DOM ──
-    const uploadZone = document.getElementById('uploadZone');
-    const fileInput = document.getElementById('fileInput');
-    const fileInfo = document.getElementById('fileInfo');
-    const fileName = document.getElementById('fileName');
-    const fileSize = document.getElementById('fileSize');
-    const fileChapters = document.getElementById('fileChapters');
-    const btnConvert = document.getElementById('btnConvert');
-    const btnDownload = document.getElementById('btnDownload');
-    const progressArea = document.getElementById('progressArea');
-    const progressFill = document.getElementById('progressFill');
-    const progressText = document.getElementById('progressText');
-    const statsArea = document.getElementById('statsArea');
-    const yamlOutput = document.getElementById('yamlOutput');
-    const previewPlaceholder = document.getElementById('previewPlaceholder');
-    const statusEl = document.getElementById('statusEl');
-    const toast = document.getElementById('toast');
-    const modeToggle = document.getElementById('modeToggle');
-    const modeLabel = document.getElementById('modeLabel');
-    const titleInput = document.getElementById('titleInput');
-    const authorInput = document.getElementById('authorInput');
-    const schemaDoc = document.getElementById('schemaDoc');
+/** InkReel 主应用 */
 
-    let selectedFile = null;
-    let currentYaml = '';
-    let isOffline = false;
-    let chapterData = [];  // from /api/preview
-    let selectedChapters = [];  // checked chapter numbers
+const App = {
+    state: {
+        isOffline: false,
+        currentNovelId: null,
+        currentScriptId: null,
+        availableScripts: [],
+        chapters: [],
+        generatedChapters: [],
+        currentYaml: '',
+        previewFilename: '',
+        previewTotalChars: 0,
+        previewGenre: '',
+        selectedChapters: new Set(),
+    },
 
-    const chapterSelect = document.getElementById('chapterSelect');
-    const chapterList = document.getElementById('chapterList');
-    const chapterCount = document.getElementById('chapterCount');
-    const chkAll = document.getElementById('chkAll');
-    const fileGenre = document.getElementById('fileGenre');
+    async init() {
+        // token 校验
+        const authed = await Auth.initApp();
+        if (!authed) return;
 
-    // ── 在线/离线切换 ──
-    async function initMode() {
+        Resizer.init();
+        this._bindEvents();
+        await this._initMode();
+        this._debouncedRefreshLibrary = Util.debounce(() => this._loadLibrary(), 3000);
+        await this._loadLibrary();
+    },
+
+    // ── 事件绑定 ──
+    _bindEvents() {
+        // 退出登录
+        document.getElementById('btnLogout').addEventListener('click', () => Auth.logout());
+        // 仓库刷新
+        document.getElementById('btnRefresh').addEventListener('click', () => this._loadLibrary());
+
+        // 导入按钮 → 触发文件选择
+        document.getElementById('btnImport').addEventListener('click', () => {
+            document.getElementById('fileInput').click();
+        });
+
+        // 文件选择
+        document.getElementById('fileInput').addEventListener('change', (e) => {
+            if (e.target.files.length) this._handleFile(e.target.files[0]);
+        });
+
+        // 导入模态框
+        document.getElementById('btnConfirmImport').addEventListener('click', () => this._confirmImport());
+        document.getElementById('btnCancelImport').addEventListener('click', () => View.hideImportModal());
+
+        // 模式切换
+        document.getElementById('modeToggle').addEventListener('change', () => this._switchMode());
+
+        // Preview 标签
+        document.querySelectorAll('.preview-tab').forEach(tab => {
+            tab.addEventListener('click', () => this._switchPreviewTab(tab));
+        });
+
+        // 下载
+        document.getElementById('btnDownload').addEventListener('click', () => this._download());
+
+        // YAML 编辑/保存
+        document.getElementById('btnEditYaml').addEventListener('click', () => {
+            const btn = document.getElementById('btnEditYaml');
+            if (btn.dataset.mode === 'edit') {
+                View.saveEdit();
+            } else {
+                View.startEdit();
+            }
+        });
+
+        // 元信息编辑
+        document.getElementById('btnEditMeta').addEventListener('click', () => View.startMetaEdit());
+        document.getElementById('btnSaveMeta').addEventListener('click', () => View.saveMetaEdit());
+        document.getElementById('btnCancelMeta').addEventListener('click', () => View._cancelMetaEdit());
+
+        // 关闭详情
+        document.getElementById('btnCloseDetail').addEventListener('click', () => View.hideNovelDetail());
+
+        // 仓库列表点击（委托）
+        document.getElementById('libraryList').addEventListener('click', (e) => {
+            const card = e.target.closest('.library-card');
+            if (!card) return;
+            const nid = parseInt(card.dataset.novelId);
+
+            if (e.target.closest('.lib-btn-del')) {
+                this._deleteNovel(nid);
+            } else if (e.target.closest('.lib-btn-open')) {
+                this._openNovel(nid);
+            } else {
+                this._openNovel(nid);
+            }
+        });
+
+        // 剧本选择器（委托）
+        document.getElementById('chapterList').addEventListener('change', (e) => {
+            if (e.target.id === 'scriptSelect') {
+                const script = this.state.availableScripts.find(s => s.id === parseInt(e.target.value));
+                if (script) this._selectScript(script);
+            }
+        });
+        document.getElementById('chapterList').addEventListener('click', (e) => {
+            if (e.target.id === 'btnNewScript') {
+                this._createNewScript();
+            }
+            if (e.target.id === 'btnRenameScript') {
+                this._startRenameScript();
+            }
+        });
+
+        // 章节操作（委托）
+        document.getElementById('chapterList').addEventListener('click', (e) => {
+            const chBtn = e.target.closest('.ch-btn-convert');
+            const reuseBtn = e.target.closest('.ch-btn-reuse');
+            const viewBtn = e.target.closest('.ch-btn-view');
+            const checkBox = e.target.closest('.ch-checkbox');
+            if (chBtn) this._convertChapter(parseFloat(chBtn.dataset.ch), chBtn);
+            if (reuseBtn) this._reuseChapter(parseFloat(reuseBtn.dataset.ch), reuseBtn);
+            if (viewBtn) this._viewChapter(parseFloat(viewBtn.dataset.ch));
+            if (checkBox) this._toggleChapterSelect(parseFloat(checkBox.dataset.ch), checkBox.checked);
+        });
+
+        // 全选 / 批量转换（委托，在 chapterSelect 容器上）
+        document.getElementById('chapterSelect').addEventListener('click', (e) => {
+            const selectAll = e.target.closest('#btnSelectAll');
+            const batchConvert = e.target.closest('#btnBatchConvert');
+            if (selectAll) this._toggleSelectAll();
+            if (batchConvert) this._batchConvert();
+        });
+
+        // 合并按钮 + 查看按钮（委托）
+        document.getElementById('detailPanel').addEventListener('click', (e) => {
+            const mergeBtn = e.target.closest('#btnMerge');
+            const viewBtn = e.target.closest('#btnMergeView');
+            if (mergeBtn) this._mergeScript();
+            if (viewBtn) {
+                // 切换到 YAML 预览并滚动
+                const yamlTab = document.querySelector('.preview-tab[data-tab="yaml"]');
+                if (yamlTab) yamlTab.click();
+                // 确保 YAML 可见
+                if (!this.state.currentYaml) {
+                    this._loadCurrentScriptYaml();
+                }
+                View.scrollToYaml();
+                // 高亮闪烁 YAML 区域
+                View.flashYaml();
+            }
+        });
+
+        // 拖拽上传
+        const dropZone = document.getElementById('dropZone');
+        dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('dragover'); });
+        dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('dragover');
+            if (e.dataTransfer.files.length) this._handleFile(e.dataTransfer.files[0]);
+        });
+        dropZone.addEventListener('click', () => document.getElementById('fileInput').click());
+    },
+
+    // ── 模式 ──
+    async _initMode() {
         try {
-            const resp = await fetch('/api/mode');
-            const data = await resp.json();
-            isOffline = data.mode === 'offline';
-            updateModeUI();
+            const data = await API.getMode();
+            this.state.isOffline = data.mode === 'offline';
+            this._updateModeUI();
         } catch (_) {}
-    }
+    },
 
-    function updateModeUI() {
-        modeToggle.checked = isOffline;
-        if (isOffline) {
-            modeLabel.textContent = '🏠 离线';
-            modeLabel.classList.add('offline');
-        } else {
-            modeLabel.textContent = '🌐 云端';
-            modeLabel.classList.remove('offline');
-        }
-    }
+    _updateModeUI() {
+        const toggle = document.getElementById('modeToggle');
+        const label = document.getElementById('modeLabel');
+        toggle.checked = this.state.isOffline;
+        label.textContent = this.state.isOffline ? '🏠 离线' : '🌐 云端';
+        label.classList.toggle('offline', this.state.isOffline);
+    },
 
-    modeToggle.addEventListener('change', async () => {
-        isOffline = modeToggle.checked;
-        updateModeUI();
+    async _switchMode() {
+        this.state.isOffline = !this.state.isOffline;
+        this._updateModeUI();
         try {
-            await fetch('/api/mode', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ mode: isOffline ? 'offline' : 'online' }),
-            });
-            showToast(isOffline ? '已切换到离线模式（本地 Ollama）' : '已切换到云端模式（DeepSeek）', 'info');
+            await API.switchMode(this.state.isOffline ? 'offline' : 'online');
+            Util.showToast(this.state.isOffline ? '已切换到离线模式' : '已切换到云端模式', 'info');
         } catch (_) {
-            showToast('模式切换失败', 'error');
+            Util.showToast('模式切换失败', 'error');
         }
-    });
+    },
 
-    // ── 文件上传 ──
-    uploadZone.addEventListener('click', () => fileInput.click());
-    fileInput.addEventListener('change', () => {
-        if (fileInput.files.length > 0) handleFile(fileInput.files[0]);
-    });
+    // ── Preview 标签 ──
+    _switchPreviewTab(tab) {
+        document.querySelectorAll('.preview-tab').forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+        const target = tab.dataset.tab;
+        document.getElementById('previewYaml').style.display = target === 'yaml' ? '' : 'none';
+        document.getElementById('previewSchema').style.display = target === 'schema' ? '' : 'none';
+        if (target === 'schema') this._loadSchema();
+    },
 
-    uploadZone.addEventListener('dragover', (e) => {
-        e.preventDefault();
-        uploadZone.classList.add('dragover');
-    });
-    uploadZone.addEventListener('dragleave', () => {
-        uploadZone.classList.remove('dragover');
-    });
-    uploadZone.addEventListener('drop', (e) => {
-        e.preventDefault();
-        uploadZone.classList.remove('dragover');
-        if (e.dataTransfer.files.length > 0) handleFile(e.dataTransfer.files[0]);
-    });
+    async _loadSchema() {
+        const el = document.getElementById('schemaDoc');
+        if (el.textContent !== '加载中...') return;
+        try {
+            const data = await API.getSchema();
+            el.innerHTML = Util.renderMarkdown(data.content);
+        } catch (_) {
+            el.textContent = '加载失败';
+        }
+    },
 
-    function handleFile(file) {
+    // ── 导入流程 ──
+    async _handleFile(file) {
         if (!file.name.match(/\.(txt|text|md|markdown|docx|epub)$/i)) {
-            showToast('请上传 .txt / .md / .docx / .epub 文件', 'error');
+            Util.showToast('请上传 .txt / .md / .docx / .epub 文件', 'error');
             return;
         }
-        selectedFile = file;
-        fileName.textContent = file.name;
-        fileSize.textContent = (file.size / 1024).toFixed(1) + ' KB';
-        fileChapters.textContent = '检测中...';
-        fileGenre.textContent = '';
-        fileInfo.style.display = '';
-        uploadZone.classList.add('has-file');
-        // 重置
-        yamlOutput.style.display = 'none';
-        previewPlaceholder.style.display = '';
-        statsArea.style.display = 'none';
-        btnDownload.style.display = 'none';
-        progressArea.style.display = 'none';
-        chapterSelect.style.display = 'none';
-        btnConvert.disabled = true;
-
-        // 调用预览 API 获取章节列表
-        previewFile(file);
-    }
-
-    async function previewFile(file) {
         const formData = new FormData();
         formData.append('file', file);
+
         try {
-            const resp = await fetch('/api/preview', { method: 'POST', body: formData });
-            const data = await resp.json();
+            const data = await API.preview(formData);
             if (data.status !== 'ok') {
-                showToast(data.message || '预览失败', 'error');
-                fileChapters.textContent = '检测失败';
+                Util.showToast(data.message || '预览失败', 'error');
                 return;
             }
-            chapterData = data.chapters;
-            selectedChapters = data.chapters.map(c => c.num);
-            fileChapters.textContent = data.chapter_count + ' 章 · ' + formatSize(data.total_chars);
-            fileGenre.textContent = '体裁: ' + (data.genre || '未知');
-            renderChapterList();
-            btnConvert.disabled = false;
+            this.state.previewFilename = data.filename;
+            this.state.previewTotalChars = data.total_chars;
+            this.state.previewGenre = data.genre;
+            View.showImportModal(data.chapters, data.genre);
         } catch (e) {
-            showToast('预览请求失败', 'error');
-            fileChapters.textContent = '请求失败';
+            Util.showToast('预览请求失败: ' + e.message, 'error');
         }
-    }
+    },
 
-    function renderChapterList() {
-        chapterList.innerHTML = chapterData.map((ch, i) => {
-            const checked = selectedChapters.includes(ch.num);
-            return '<label class="chapter-item' + (checked ? ' checked' : '') + '">' +
-                '<input type="checkbox" class="chk-chapter" data-num="' + ch.num + '" ' +
-                (checked ? 'checked' : '') + '>' +
-                '<span class="ch-num">#' + ch.num + '</span>' +
-                '<span class="ch-title">' + escapeHtml(ch.title) + '</span>' +
-                '<span class="ch-chars">' + formatSize(ch.chars) + '</span>' +
-                '</label>';
-        }).join('');
+    async _confirmImport() {
+        const title = document.getElementById('importTitle').value.trim();
+        try {
+            const data = await API.importNovel(title, '');
+            if (data.status === 'ok') {
+                View.hideImportModal();
+                Util.showToast('导入成功 ✅', 'success');
+                await this._loadLibrary();
+                // 自动打开
+                setTimeout(() => this._openNovel(data.novel_id), 300);
+            } else {
+                Util.showToast(data.message || '导入失败', 'error');
+            }
+        } catch (e) {
+            Util.showToast('导入失败: ' + e.message, 'error');
+        }
+    },
 
-        chapterCount.textContent = selectedChapters.length + ' / ' + chapterData.length + ' 章';
-        chapterSelect.style.display = '';
+    // ── 仓库 ──
+    async _loadLibrary() {
+        try {
+            const data = await API.listNovels();
+            if (data.status === 'ok') {
+                View.renderLibrary(data.novels);
+            } else {
+                View.renderLibrary([]);
+            }
+        } catch (_) {
+            View.renderLibrary([]);
+        }
+    },
 
-        // 全选复选框
-        chkAll.checked = selectedChapters.length === chapterData.length;
-        chkAll.indeterminate = selectedChapters.length > 0 && selectedChapters.length < chapterData.length;
+    async _reloadNovelDetail() {
+        if (!this.state.currentNovelId) return;
+        try {
+            const data = await API.getNovel(this.state.currentNovelId);
+            if (data.status !== 'ok') return;
+            const novel = data.novel;
+            this.state.availableScripts = novel.scripts || [];
+            // 优先保留当前选中（如果还在），其次选草稿，最后选已完成
+            const current = this.state.availableScripts.find(s => s.id === this.state.currentScriptId);
+            const draft = this.state.availableScripts.find(s => s.status === 'draft');
+            const best = current || draft || this.state.availableScripts[0];
+            if (best) this._selectScript(best);
+            View.showNovelHeader(novel);
+        } catch (_) {}
+    },
 
-        // 事件绑定
-        chkAll.onclick = () => {
-            selectedChapters = chkAll.checked ? chapterData.map(c => c.num) : [];
-            renderChapterList();
+    async _openNovel(novelId) {
+        try {
+            const data = await API.getNovel(novelId);
+            if (data.status !== 'ok') {
+                Util.showToast('加载小说失败', 'error');
+                return;
+            }
+            const novel = data.novel;
+            this.state.currentNovelId = novelId;
+            this.state.chapters = novel.chapters.map(c => ({
+                num: c.chapter_number, title: c.title, chars: c.char_count,
+            }));
+            this.state.availableScripts = novel.scripts || [];
+
+            // 优先选草稿（继续工作），没有草稿才选已完成剧本
+            if (this.state.availableScripts.length > 0) {
+                const draft = this.state.availableScripts.find(s => s.status === 'draft');
+                const best = draft || this.state.availableScripts[0];
+                this._selectScript(best);
+            } else {
+                this.state.currentScriptId = null;
+                this.state.generatedChapters = [];
+                this.state.currentYaml = '';
+                View.showPlaceholder();
+                document.getElementById('btnDownload').style.display = 'none';
+                View.renderChapterList(this.state.chapters, this.state.generatedChapters,
+                                       this.state.availableScripts, this.state.currentScriptId);
+            }
+
+            View.showNovelHeader(novel);
+        } catch (e) {
+            Util.showToast('加载失败: ' + e.message, 'error');
+        }
+    },
+
+    _selectScript(script) {
+        this.state.currentScriptId = script.id;
+        this.state.generatedChapters = (script.chapters || []).map(c => c.chapter_number);
+        // 有 yaml_content 就直接展示（不论 complete 还是 draft）
+        if (script.yaml_content) {
+            this.state.currentYaml = script.yaml_content;
+            View.showYaml(script.yaml_content);
+            document.getElementById('btnDownload').style.display = '';
+        } else if (this.state.generatedChapters.length > 0) {
+            // draft 剧本可能列表接口没带 yaml_content，主动拉取
+            this._loadCurrentScriptYaml();
+        } else {
+            View.showPlaceholder();
+            document.getElementById('btnDownload').style.display = 'none';
+        }
+        View.renderChapterList(this.state.chapters, this.state.generatedChapters,
+                               this.state.availableScripts, this.state.currentScriptId);
+    },
+
+    async _deleteNovel(novelId) {
+        if (!confirm('确定删除此小说及其所有关联数据？')) return;
+        await API.deleteNovel(novelId);
+        if (this.state.currentNovelId === novelId) View.hideNovelDetail();
+        Util.showToast('已删除', 'info');
+        await this._loadLibrary();
+    },
+
+    // ── 章节勾选 ──
+    _toggleChapterSelect(chNum, checked) {
+        if (checked) {
+            this.state.selectedChapters.add(chNum);
+        } else {
+            this.state.selectedChapters.delete(chNum);
+        }
+        View.updateBatchBar(this.state.selectedChapters, this.state.chapters);
+    },
+
+    _toggleSelectAll() {
+        const allNums = this.state.chapters.map(c => c.num);
+        const allSelected = allNums.every(n => this.state.selectedChapters.has(n));
+        if (allSelected) {
+            this.state.selectedChapters.clear();
+        } else {
+            allNums.forEach(n => this.state.selectedChapters.add(n));
+        }
+        // 重新渲染勾选状态
+        View.refreshCheckboxes(this.state.selectedChapters);
+        View.updateBatchBar(this.state.selectedChapters, this.state.chapters);
+    },
+
+    async _batchConvert() {
+        if (!this.state.currentNovelId || this.state.selectedChapters.size === 0) return;
+        const chapters = [...this.state.selectedChapters].sort((a, b) => a - b);
+        const btn = document.getElementById('btnBatchConvert');
+        if (btn) { btn.disabled = true; btn.textContent = `⏳ 转换中...`; }
+        View.setStatus('active', `⏳ 批量转换 ${chapters.length} 章...`);
+
+        try {
+            const data = await API.convertBatch(this.state.currentNovelId, chapters);
+            if (data.status === 'ok') {
+                // 如果后端创建了新草稿（旧剧本已完成），重置状态
+                if (data.script_id !== this.state.currentScriptId) {
+                    this.state.generatedChapters = [];
+                    this.state.currentScriptId = data.script_id;
+                    Util.showToast('已自动创建新改编草稿', 'info');
+                }
+
+                let totalScenes = 0;
+                for (const r of data.results) {
+                    if (r.status === 'ok') {
+                        totalScenes += r.scenes_count || 0;
+                        if (!this.state.generatedChapters.includes(r.chapter_number)) {
+                            this.state.generatedChapters.push(r.chapter_number);
+                        }
+                    }
+                }
+
+                // 确保 availableScripts 包含当前剧本
+                if (!this.state.availableScripts.find(s => s.id === data.script_id)) {
+                    this.state.availableScripts.push({
+                        id: data.script_id,
+                        status: 'draft',
+                        chapters: this.state.generatedChapters.map(cn => ({ chapter_number: cn })),
+                        yaml_content: '',
+                        created_at: new Date().toISOString(),
+                    });
+                }
+
+                // 清除选择
+                this.state.selectedChapters.clear();
+                View.setStatus('success', `✅ 批量转换完成`);
+                Util.showToast(`批量转换完成 (${data.results.length}章, ${totalScenes}场景)`, 'success');
+                View.renderChapterList(this.state.chapters, this.state.generatedChapters,
+                                       this.state.availableScripts, this.state.currentScriptId);
+
+                // 显示最后一章的 YAML
+                const lastOk = [...data.results].reverse().find(r => r.status === 'ok');
+                if (lastOk && lastOk.yaml) {
+                    View.showYaml(lastOk.yaml);
+                    document.getElementById('btnDownload').style.display = '';
+                    View.scrollToYaml();
+                }
+
+                if (data.can_merge) {
+                    Util.showToast('当前改编已可合并！', 'info');
+                }
+            } else {
+                Util.showToast(data.message || '批量转换失败', 'error');
+                View.setStatus('error', '❌ 批量转换失败');
+            }
+        } catch (e) {
+            Util.showToast('请求失败: ' + e.message, 'error');
+            View.setStatus('error', '❌ 网络错误');
+        }
+        if (btn) { btn.disabled = false; btn.textContent = '🎬 批量转换'; }
+    },
+
+    // ── 逐章转换 ──
+    async _convertChapter(chNum, btnEl) {
+        if (!this.state.currentNovelId) return;
+        btnEl.disabled = true;
+        btnEl.textContent = '⏳...';
+        View.setStatus('active', `⏳ 转换第${chNum}章...`);
+
+        try {
+            const data = await API.convertChapter(this.state.currentNovelId, chNum);
+            if (data.status === 'ok') {
+                if (data.reused) {
+                    Util.showToast(`第${chNum}章已复用 (${data.scenes_count}个场景)`, 'info');
+                } else {
+                    Util.showToast(`第${chNum}章转换完成 (${data.scenes_count}个场景)`, 'success');
+                }
+                View.setStatus('success', `✅ 第${chNum}章完成`);
+
+                // 如果后端创建了新草稿（旧剧本已完成），切换到新剧本
+                const prevScriptId = this.state.currentScriptId;
+                if (data.script_id !== prevScriptId) {
+                    // 新草稿：重置章节列表，更新 availableScripts
+                    this.state.generatedChapters = [chNum];
+                    this.state.currentScriptId = data.script_id;
+                    this.state.availableScripts.push({
+                        id: data.script_id,
+                        status: 'draft',
+                        chapters: [{ chapter_number: chNum }],
+                        yaml_content: '',
+                        created_at: new Date().toISOString(),
+                    });
+                    Util.showToast('已自动创建新改编草稿', 'info');
+                } else {
+                    // 同一剧本：追加章节
+                    if (!this.state.generatedChapters.includes(chNum)) {
+                        this.state.generatedChapters.push(chNum);
+                    }
+                    this.state.currentScriptId = data.script_id;
+                }
+
+                // 确保 availableScripts 包含当前剧本
+                if (!this.state.availableScripts.find(s => s.id === data.script_id)) {
+                    this.state.availableScripts.push({
+                        id: data.script_id,
+                        status: 'draft',
+                        chapters: this.state.generatedChapters.map(cn => ({ chapter_number: cn })),
+                        yaml_content: '',
+                        created_at: new Date().toISOString(),
+                    });
+                }
+
+                View.showYaml(data.yaml);
+                document.getElementById('btnDownload').style.display = '';
+                View.scrollToYaml();
+
+                // 刷新章节列表
+                View.renderChapterList(this.state.chapters, this.state.generatedChapters,
+                                       this.state.availableScripts, this.state.currentScriptId);
+
+                if (data.can_merge) {
+                    Util.showToast('当前改编已可合并！', 'info');
+                }
+            } else {
+                Util.showToast(data.message || '转换失败', 'error');
+                View.setStatus('error', '❌ 转换失败');
+            }
+        } catch (e) {
+            Util.showToast('请求失败: ' + e.message, 'error');
+            View.setStatus('error', '❌ 网络错误');
+        }
+        btnEl.disabled = false;
+        btnEl.textContent = '🔄 重转';
+    },
+
+    // ── 复用已在其他改编中完成的章节（秒完成，不走 LLM）──
+    async _reuseChapter(chNum, btnEl) {
+        if (!this.state.currentNovelId) return;
+        btnEl.disabled = true;
+        btnEl.textContent = '📋 ...';
+        View.setStatus('active', `📋 复用第${chNum}章...`);
+
+        try {
+            const data = await API.convertChapter(this.state.currentNovelId, chNum);
+            if (data.status === 'ok') {
+                View.setStatus('success', `✅ 第${chNum}章已复用`);
+                Util.showToast(`第${chNum}章已复用 (${data.scenes_count}个场景)`, 'success');
+
+                if (data.script_id !== this.state.currentScriptId) {
+                    this.state.generatedChapters = [chNum];
+                    this.state.currentScriptId = data.script_id;
+                    if (!this.state.availableScripts.find(s => s.id === data.script_id)) {
+                        this.state.availableScripts.push({
+                            id: data.script_id, status: 'draft',
+                            chapters: [{ chapter_number: chNum }],
+                            yaml_content: '', created_at: new Date().toISOString(),
+                        });
+                    }
+                } else {
+                    if (!this.state.generatedChapters.includes(chNum)) {
+                        this.state.generatedChapters.push(chNum);
+                    }
+                }
+
+                View.showYaml(data.yaml);
+                document.getElementById('btnDownload').style.display = '';
+                View.scrollToYaml();
+                View.renderChapterList(this.state.chapters, this.state.generatedChapters,
+                                       this.state.availableScripts, this.state.currentScriptId);
+
+                if (data.can_merge) {
+                    Util.showToast('当前改编已可合并！', 'info');
+                }
+            } else {
+                Util.showToast(data.message || '复用失败', 'error');
+                View.setStatus('error', '❌ 复用失败');
+            }
+        } catch (e) {
+            Util.showToast('请求失败: ' + e.message, 'error');
+            View.setStatus('error', '❌ 网络错误');
+        }
+        btnEl.disabled = false;
+        btnEl.textContent = '📋 复用';
+    },
+
+    async _viewChapter(chNum) {
+        try {
+            const data = await API.getChapterYaml(this.state.currentNovelId, chNum);
+            if (data.status === 'ok' && data.yaml) {
+                this.state.currentYaml = data.yaml;
+                View.showYaml(data.yaml);
+                Util.showToast(`第${chNum}章 YAML`, 'info');
+            } else {
+                Util.showToast(`第${chNum}章暂无数据`, 'error');
+            }
+        } catch (e) {
+            Util.showToast('获取失败', 'error');
+        }
+    },
+
+    async _createNewScript() {
+        if (!this.state.currentNovelId) return;
+        try {
+            const data = await API.newScript(this.state.currentNovelId, '（新改编）');
+            if (data.status === 'ok') {
+                // 重新加载
+                const novel = await API.getNovel(this.state.currentNovelId);
+                if (novel.status === 'ok') {
+                    this.state.availableScripts = novel.novel.scripts || [];
+                    const newest = this.state.availableScripts[this.state.availableScripts.length - 1];
+                    if (newest) this._selectScript(newest);
+                }
+                Util.showToast(data.message || '已完成', 'success');
+            }
+        } catch (e) {
+            Util.showToast('创建失败', 'error');
+        }
+    },
+
+    // ── 重命名当前剧本 ──
+    _startRenameScript() {
+        if (!this.state.currentScriptId) return;
+        const display = document.getElementById('scriptNameDisplay');
+        const input = document.getElementById('scriptNameInput');
+        if (!display || !input) return;
+
+        const current = this.state.availableScripts.find(s => s.id === this.state.currentScriptId);
+        const curName = current && current.title && current.title !== '（未命名）' && current.title !== '（新改编）'
+            ? current.title : '';
+
+        display.style.display = 'none';
+        input.style.display = '';
+        input.value = curName;
+        input.placeholder = '输入剧本名称...';
+        input.focus();
+        input.select();
+
+        const save = async () => {
+            const newName = input.value.trim();
+            input.style.display = 'none';
+            display.style.display = '';
+            if (newName && newName !== curName) {
+                await this._renameScript(newName);
+            }
         };
 
-        chapterList.querySelectorAll('.chk-chapter').forEach(cb => {
-            cb.onchange = () => {
-                const num = parseInt(cb.dataset.num);
-                if (cb.checked) {
-                    if (!selectedChapters.includes(num)) selectedChapters.push(num);
-                } else {
-                    selectedChapters = selectedChapters.filter(n => n !== num);
-                }
-                renderChapterList();
-            };
-        });
-    }
+        input.onkeydown = (e) => {
+            if (e.key === 'Enter') { e.preventDefault(); save(); }
+            if (e.key === 'Escape') { input.style.display = 'none'; display.style.display = ''; }
+        };
+        input.onblur = () => save();
+    },
 
-    function formatSize(chars) {
-        if (chars >= 10000) return (chars / 10000).toFixed(1) + '万';
-        if (chars >= 1000) return (chars / 1000).toFixed(1) + 'k';
-        return chars + '';
-    }
-
-    function escapeHtml(text) {
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
-    }
-
-    // ── 转换 ──
-    btnConvert.addEventListener('click', async () => {
-        if (!selectedFile) return;
-
-        btnConvert.disabled = true;
-        progressArea.style.display = '';
-        progressFill.style.width = '10%';
-        progressText.textContent = '正在分割章节...';
-        setStatus('active', '⏳ 处理中...');
-
-        const formData = new FormData();
-        formData.append('file', selectedFile);
-        if (titleInput.value.trim()) formData.append('title', titleInput.value.trim());
-        if (authorInput.value.trim()) formData.append('author', authorInput.value.trim());
-        if (selectedChapters.length > 0 && selectedChapters.length < chapterData.length) {
-            formData.append('chapters_json', JSON.stringify(selectedChapters));
+    async _renameScript(newName) {
+        try {
+            await API.updateScript(this.state.currentScriptId, { title: newName });
+            // 更新本地状态
+            const s = this.state.availableScripts.find(sc => sc.id === this.state.currentScriptId);
+            if (s) s.title = newName;
+            // 刷新显示
+            View.renderChapterList(this.state.chapters, this.state.generatedChapters,
+                                   this.state.availableScripts, this.state.currentScriptId);
+            this._debouncedRefreshLibrary();
+            Util.showToast('剧本已重命名 ✅', 'success');
+        } catch (e) {
+            Util.showToast('重命名失败', 'error');
         }
+    },
+
+    // ── 合并 ──
+    async _mergeScript() {
+        if (!this.state.currentScriptId) return;
+        const btn = document.getElementById('btnMerge');
+        if (btn) { btn.disabled = true; btn.textContent = '⏳ 合并中...'; }
+        View.setStatus('active', '⏳ 合并中...');
 
         try {
-            const resp = await fetch('/api/convert', {
-                method: 'POST',
-                body: formData,
-            });
+            // 不传 title，后端会用小说原标题
+            const data = await API.mergeScript(this.state.currentScriptId, null);
+            if (data.status === 'ok') {
+                this.state.currentYaml = data.yaml;
+                View.showYaml(data.yaml);
+                View.scrollToYaml();
+                document.getElementById('btnDownload').style.display = '';
+                View.setStatus('success', '✅ 剧本合并完成');
+                Util.showToast(`完整剧本已生成！(${data.stats.scenes}场景)`, 'success');
 
-            const data = await resp.json();
+                // 立即更新本地状态，标记为已完成（防止 _reloadNovelDetail 失败时 UI 卡住）
+                const draft = this.state.availableScripts.find(s => s.id === this.state.currentScriptId);
+                if (draft) {
+                    draft.status = 'complete';
+                    draft.yaml_content = data.yaml;
+                }
 
-            if (data.status === 'error') {
-                setStatus('error', '❌ 转换失败');
-                showToast(data.message, 'error');
-                progressArea.style.display = 'none';
-                btnConvert.disabled = false;
+                // 立即刷新 UI（不等 API）
+                View.renderChapterList(this.state.chapters, this.state.generatedChapters,
+                                       this.state.availableScripts, this.state.currentScriptId);
+
+                // 异步刷新仓库（防抖）和详情
+                this._debouncedRefreshLibrary();
+                await this._reloadNovelDetail();
+            } else {
+                Util.showToast(data.message || '合并失败', 'error');
+                View.setStatus('error', '❌ 合并失败');
+                if (btn) { btn.disabled = false; btn.textContent = '🧩 合并为完整剧本'; }
+            }
+        } catch (e) {
+            Util.showToast('请求失败: ' + e.message, 'error');
+            View.setStatus('error', '❌ 网络错误');
+            if (btn) { btn.disabled = false; btn.textContent = '🧩 合并为完整剧本'; }
+        }
+    },
+
+    // ── 从 API 加载当前剧本 YAML ──
+    async _loadCurrentScriptYaml() {
+        if (!this.state.currentScriptId) return;
+        try {
+            const data = await API.getScript(this.state.currentScriptId);
+            if (data.status !== 'ok' || !data.script) return;
+            const script = data.script;
+            // 优先用 script 级别的 yaml_content（complete 剧本有）
+            if (script.yaml_content) {
+                this.state.currentYaml = script.yaml_content;
+                View.showYaml(script.yaml_content);
+                document.getElementById('btnDownload').style.display = '';
                 return;
             }
-
-            // 成功
-            progressFill.style.width = '100%';
-            progressText.textContent = '完成!';
-            setStatus('success', '✅ 转换完成');
-
-            // 显示统计
-            statsArea.style.display = '';
-            document.getElementById('statChapters').textContent = data.stats.chapters;
-            document.getElementById('statChars').textContent = data.stats.characters;
-            document.getElementById('statScenes').textContent = data.stats.scenes;
-
-            // YAML 预览（语法高亮）
-            currentYaml = data.yaml;
-            yamlOutput.innerHTML = highlightYaml(currentYaml);
-            yamlOutput.style.display = '';
-            previewPlaceholder.style.display = 'none';
-
-            // 显示验证错误
-            if (data.errors && data.errors.length > 0) {
-                const errDiv = document.createElement('div');
-                errDiv.className = 'errors-box';
-                errDiv.innerHTML = '<strong>⚠ 验证警告</strong><ul>' +
-                    data.errors.map(e => '<li>' + e + '</li>').join('') + '</ul>';
-                yamlOutput.parentElement.insertBefore(errDiv, yamlOutput.nextSibling);
+            // draft 剧本：聚合所有已转换章节的 YAML
+            const chapters = script.chapters || [];
+            if (chapters.length > 0) {
+                const parts = [];
+                for (const ch of chapters) {
+                    if (ch.yaml_content) {
+                        parts.push(`# ── 第${ch.chapter_number}章 ──\n\n${ch.yaml_content}`);
+                    }
+                }
+                if (parts.length > 0) {
+                    const combined = parts.join('\n\n');
+                    this.state.currentYaml = combined;
+                    View.showYaml(combined);
+                    document.getElementById('btnDownload').style.display = '';
+                    return;
+                }
             }
-
-            // 更新文件信息中的章节数
-            fileChapters.textContent = data.stats.chapters + ' 章';
-
-            // 显示输出文件路径
-            if (data.output_file) {
-                const pathEl = document.getElementById('outputPath');
-                pathEl.textContent = 'Saved: ' + data.output_file;
-                pathEl.style.display = '';
-            }
-
-            btnDownload.style.display = '';
-            btnConvert.disabled = false;
-
-        } catch (e) {
-            setStatus('error', '❌ 网络错误');
-            showToast('请求失败: ' + e.message, 'error');
-            progressArea.style.display = 'none';
-            btnConvert.disabled = false;
-        }
-    });
+            // 没有任何内容
+            View.showPlaceholder();
+            document.getElementById('btnDownload').style.display = 'none';
+        } catch (_) {}
+    },
 
     // ── 下载 ──
-    btnDownload.addEventListener('click', () => {
-        if (!currentYaml) return;
-        const blob = new Blob([currentYaml], { type: 'text/yaml;charset=utf-8' });
+    _download() {
+        if (!this.state.currentYaml) return;
+        const blob = new Blob([this.state.currentYaml], { type: 'text/yaml;charset=utf-8' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = (titleInput.value.trim() || 'script') + '.yaml';
+        a.download = 'script.yaml';
         a.click();
         URL.revokeObjectURL(url);
-        showToast('已下载 YAML 剧本文件', 'success');
-    });
+        Util.showToast('已下载 YAML 剧本文件', 'success');
+    },
+};
 
-    // ── Tab 切换 ──
-    document.querySelectorAll('.preview-tab').forEach(tab => {
-        tab.addEventListener('click', () => {
-            document.querySelectorAll('.preview-tab').forEach(t => t.classList.remove('active'));
-            tab.classList.add('active');
-            const target = tab.dataset.tab;
-            document.getElementById('previewYaml').style.display = target === 'yaml' ? '' : 'none';
-            document.getElementById('previewSchema').style.display = target === 'schema' ? '' : 'none';
-            if (target === 'schema') loadSchemaDoc();
-        });
-    });
-
-    async function loadSchemaDoc() {
-        if (schemaDoc.textContent !== '加载中...') return;
-        try {
-            const resp = await fetch('/api/schema');
-            const data = await resp.json();
-            schemaDoc.innerHTML = renderMarkdown(data.content);
-        } catch (_) {
-            schemaDoc.textContent = '加载 Schema 文档失败';
-        }
-    }
-
-    // ── 简易 Markdown 渲染 ──
-    function renderMarkdown(md) {
-        let html = md
-            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-            .replace(/^### (.+)$/gm, '<h3>$1</h3>')
-            .replace(/^## (.+)$/gm, '<h2>$1</h2>')
-            .replace(/^# (.+)$/gm, '<h1>$1</h1>')
-            .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-            .replace(/\*(.+?)\*/g, '<em>$1</em>')
-            .replace(/`([^`]+)`/g, '<code>$1</code>')
-            .replace(/^\- (.+)$/gm, '<li>$1</li>')
-            .replace(/^(\d+)\. (.+)$/gm, '<li>$2</li>')
-            .replace(/(<li>.*<\/li>\n?)+/g, '<ul>$&</ul>')
-            .replace(/\n\n/g, '</p><p>')
-            .replace(/\n/g, '<br>');
-        return '<p>' + html + '</p>';
-    }
-
-    // ── YAML 语法高亮 ──
-    function highlightYaml(yaml) {
-        return yaml
-            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-            .replace(/^(\s*)(#.*)/gm, '<span class="y-comment">$1$2</span>')
-            .replace(/^(\s*)([\w_]+):/gm, '$1<span class="y-key">$2</span>:')
-            .replace(/:\s+"([^"]*)"/g, ': <span class="y-str">"$1"</span>')
-            .replace(/:\s+'([^']*)'/g, ': <span class="y-str">\'$1\'</span>')
-            .replace(/:\s+(\d+\.?\d*)/g, ': <span class="y-num">$1</span>')
-            .replace(/:\s+(true|false)/g, ': <span class="y-bool">$1</span>')
-            .replace(/-\s+(\w[\w_\d]*)/g, '- <span class="y-list">$1</span>');
-    }
-
-    // ── 工具函数 ──
-    function setStatus(state, text) {
-        statusEl.className = 'status ' + state;
-        statusEl.textContent = text;
-    }
-
-    function showToast(msg, type) {
-        toast.textContent = msg;
-        toast.className = 'toast ' + type + ' show';
-        clearTimeout(toast._t);
-        toast._t = setTimeout(() => toast.classList.remove('show'), 3000);
-    }
-
-    // ── 初始化 ──
-    initMode();
-})();
+document.addEventListener('DOMContentLoaded', () => App.init());
