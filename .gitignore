@@ -19,6 +19,10 @@ Thumbs.db
 *.log
 server.log
 
+# Data (runtime database)
+data/*
+!data/.gitkeep
+
 # Output
 output/
 *.yaml.bak
