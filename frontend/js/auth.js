@@ -5,23 +5,23 @@ const Auth = {
 
     /** 是否已登录 */
     loggedIn() {
-        return !!sessionStorage.getItem(this.TOKEN_KEY);
+        return !!localStorage.getItem(this.TOKEN_KEY);
     },
 
     /** 获取 token */
     getToken() {
-        return sessionStorage.getItem(this.TOKEN_KEY);
+        return localStorage.getItem(this.TOKEN_KEY);
     },
 
     /** 保存 token 并跳转到工具页 */
     _saveAndGo(token) {
-        sessionStorage.setItem(this.TOKEN_KEY, token);
+        localStorage.setItem(this.TOKEN_KEY, token);
         window.location.href = '/app';
     },
 
     /** 退出登录，返回 landing */
     logout() {
-        sessionStorage.removeItem(this.TOKEN_KEY);
+        localStorage.removeItem(this.TOKEN_KEY);
         window.location.href = '/';
     },
 
@@ -146,7 +146,7 @@ const Auth = {
         if (this.loggedIn()) {
             this.check().then(ok => {
                 if (ok) window.location.href = '/app';
-                else sessionStorage.removeItem(this.TOKEN_KEY);
+                else localStorage.removeItem(this.TOKEN_KEY);
             });
             return;
         }
@@ -171,7 +171,7 @@ const Auth = {
         });
 
         // 所有触发登录的按钮
-        document.querySelectorAll('#btnHeroStart, #btnCtaStart, #btnNavLogin').forEach(btn => {
+        document.querySelectorAll('#btnHeroStart, #btnCtaStart, #btnNavLogin, #btnNavStart').forEach(btn => {
             btn.addEventListener('click', showLogin);
         });
 
@@ -303,7 +303,7 @@ const Auth = {
         }
         const ok = await this.check();
         if (!ok) {
-            sessionStorage.removeItem(this.TOKEN_KEY);
+            localStorage.removeItem(this.TOKEN_KEY);
             window.location.href = '/';
             return false;
         }
