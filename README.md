@@ -4,8 +4,8 @@
 
 > 🏆 XEngineer 新工科计划 第三批 · 题目三：AI 小说转剧本工具
 
-📺 **Demo 视频**：InkReel — AI 一键把小说变成剧本，开源免费 | loop-zer0  
-> UP主：_Z_er_0
+📺 **Demo 视频**：[InkReel — AI 一键把小说变成剧本，开源免费 \| loop-zer0](https://www.bilibili.com/video/BV1ndEb6AESr)  
+> UP主：[_Z_er_0](https://space.bilibili.com/349068591)
 
 ---
 
@@ -191,8 +191,8 @@ acts:         # 四幕结构（开端·建置 → 发展·对抗 → 高潮·转
 
 ## 🎬 Demo 视频
 
-InkReel — AI 一键把小说变成剧本，开源免费 | loop-zer0  
-UP主：_Z_er_0
+[InkReel — AI 一键把小说变成剧本，开源免费 \| loop-zer0](https://www.bilibili.com/video/BV1ndEb6AESr)  
+UP主：[_Z_er_0](https://space.bilibili.com/349068591)
 
 ---
 
