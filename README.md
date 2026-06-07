@@ -5,7 +5,7 @@
 > 🏆 XEngineer 新工科计划 第三批 · 题目三：AI 小说转剧本工具
 
 📺 **Demo 视频**：[InkReel — AI 一键把小说变成剧本，开源免费 | loop-zer0](https://www.bilibili.com/video/待替换)  
-> UP主：[_Z_er_0](https://space.bilibili.com/待替换)  ·  上传后替换此链接
+> UP主：[_Z_er_0](https://space.bilibili.com/待替换)
 
 ---
 
