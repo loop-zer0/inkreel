@@ -11,9 +11,8 @@ from app.config import FRONTEND_DIR
 from app.auth import (
     AuthMiddleware, generate_token, verify_token,
     find_user, create_user, check_password, reset_user_password, get_user_count,
-    generate_verification_code, check_verification_code, send_code_response,
 )
-from app.routers import novels, convert, scripts, system
+from app.routers import novels, convert, scripts, system, merges, translations
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
@@ -58,42 +57,24 @@ app.add_middleware(AuthMiddleware)
 app.include_router(novels.router)
 app.include_router(convert.router)
 app.include_router(scripts.router)
+app.include_router(merges.router)
+app.include_router(translations.router)
 app.include_router(system.router)
 
 
 # ── Auth 路由 ──
 
-@app.post("/api/auth/send-code")
-async def auth_send_code(req: dict):
-    """发送验证码：邮箱走 SMTP，手机号本地显示"""
-    email = (req.get("email") or "").strip()
-    phone = (req.get("phone") or "").strip()
-
-    if not email and not phone:
-        return JSONResponse({"status": "error", "message": "请输入邮箱或手机号"}, status_code=400)
-
-    key = email or phone
-    code = generate_verification_code(key)
-    return send_code_response(key, code)
-
-
 @app.post("/api/auth/register")
 async def auth_register(req: dict):
-    """注册新用户（需验证码）"""
+    """注册新用户"""
     email = (req.get("email") or "").strip()
     phone = (req.get("phone") or "").strip()
     password = (req.get("password") or "").strip()
-    code = (req.get("code") or "").strip()
 
     if not email and not phone:
         return JSONResponse({"status": "error", "message": "请输入邮箱或手机号"}, status_code=400)
     if len(password) < 4:
         return JSONResponse({"status": "error", "message": "密码至少 4 位"}, status_code=400)
-
-    # 验证码校验
-    key = email or phone
-    if not check_verification_code(key, code):
-        return JSONResponse({"status": "error", "message": "验证码错误或已过期"}, status_code=400)
 
     # 检查是否已存在
     if email and find_user(email=email):
@@ -138,10 +119,9 @@ async def auth_login(req: dict):
 
 @app.post("/api/auth/reset-password")
 async def auth_reset_password(req: dict):
-    """找回密码：验证码通过后重置"""
+    """找回密码：直接重置"""
     email = (req.get("email") or "").strip()
     phone = (req.get("phone") or "").strip()
-    code = (req.get("code") or "").strip()
 
     if not email and not phone:
         return JSONResponse({"status": "error", "message": "请输入邮箱或手机号"}, status_code=400)
@@ -154,11 +134,6 @@ async def auth_reset_password(req: dict):
 
     if not user:
         return JSONResponse({"status": "error", "message": "该账号未注册"}, status_code=404)
-
-    # 验证码校验
-    key = email or phone
-    if not check_verification_code(key, code):
-        return JSONResponse({"status": "error", "message": "验证码错误或已过期"}, status_code=400)
 
     # 生成新密码并重置
     import secrets

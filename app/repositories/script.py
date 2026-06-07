@@ -57,7 +57,7 @@ def get_script(script_id: int) -> Optional[dict]:
 
 def update_script(script_id: int, yaml_content: str = None,
                   title: str = None, status: str = None) -> bool:
-    """更新剧本的 YAML / 标题 / 状态"""
+    """更新剧本的 YAML / 标题 / 状态（外部手动编辑入口，会标记 manually_edited）"""
     db = get_db()
     try:
         sets = []
@@ -65,6 +65,7 @@ def update_script(script_id: int, yaml_content: str = None,
         if yaml_content is not None:
             sets.append("yaml_content = ?")
             params.append(yaml_content)
+            sets.append("manually_edited = 1")
         if title is not None:
             sets.append("title = ?")
             params.append(title)
@@ -164,10 +165,12 @@ def list_scripts(novel_id: int = None) -> List[dict]:
 
 
 def delete_script(script_id: int) -> bool:
-    """删除剧本"""
+    """删除剧本；不存在返回 None 表示 404"""
     db = get_db()
     try:
-        db.execute("DELETE FROM scripts WHERE id = ?", (script_id,))
+        cur = db.execute("DELETE FROM scripts WHERE id = ?", (script_id,))
+        if cur.rowcount == 0:
+            return None
         db.commit()
         return True
     except Exception as e:
@@ -278,5 +281,49 @@ def get_generated_chapter_numbers(novel_id: int, script_id: int = None) -> List[
         return [r["chapter_number"] for r in rows]
     except Exception:
         return []
+    finally:
+        db.close()
+
+
+def is_manually_edited(script_id: int) -> bool:
+    """检查剧本是否被手动编辑过"""
+    db = get_db()
+    try:
+        row = db.execute(
+            "SELECT manually_edited FROM scripts WHERE id = ?", (script_id,)
+        ).fetchone()
+        return bool(row and row["manually_edited"])
+    finally:
+        db.close()
+
+
+def auto_save_yaml(script_id: int, yaml_content: str,
+                   character_count: int, scene_count: int) -> bool:
+    """自动合并保存 YAML——不标记 manually_edited，覆盖草稿的 yaml_content"""
+    db = get_db()
+    try:
+        db.execute(
+            """UPDATE scripts SET yaml_content = ?, character_count = ?, scene_count = ?,
+               updated_at = datetime('now','localtime')
+               WHERE id = ?""",
+            (yaml_content, character_count, scene_count, script_id),
+        )
+        db.commit()
+        return True
+    except Exception as e:
+        db.rollback()
+        logger.error(f"[ScriptRepo] 自动保存 YAML 失败: {e}")
+        return False
+    finally:
+        db.close()
+
+
+def reset_manual_edit(script_id: int) -> bool:
+    """重置 manually_edited 标记（用户选择恢复自动合并时调用）"""
+    db = get_db()
+    try:
+        db.execute("UPDATE scripts SET manually_edited = 0 WHERE id = ?", (script_id,))
+        db.commit()
+        return True
     finally:
         db.close()

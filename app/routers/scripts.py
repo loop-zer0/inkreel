@@ -21,6 +21,8 @@ async def get_script(script_id: int):
 async def delete_script(script_id: int):
     """删除剧本"""
     ok = script_repo.delete_script(script_id)
+    if ok is None:
+        return JSONResponse({"status": "error", "message": "剧本不存在"}, status_code=404)
     if not ok:
         return JSONResponse({"status": "error", "message": "删除失败"}, status_code=500)
     return {"status": "ok", "message": "已删除"}
@@ -60,3 +62,18 @@ async def get_chapter_yaml(novel_id: int, chapter_num: float):
         if r.get("yaml_content"):
             return {"status": "ok", "yaml": r["yaml_content"], "chapter_number": chapter_num}
     return JSONResponse({"status": "error", "message": "该章节 YAML 为空"}, status_code=404)
+
+
+@router.post("/scripts/{script_id}/reset-auto-merge")
+async def reset_auto_merge(script_id: int):
+    """重置 manually_edited 标记，恢复自动合并"""
+    script_repo.reset_manual_edit(script_id)
+    # 立即触发一次自动合并
+    from app.routers.convert import _auto_merge
+    result = _auto_merge(script_id, script_repo.get_script(script_id)["novel_id"])
+    return {
+        "status": "ok",
+        "message": "已恢复自动合并",
+        "merged_yaml": result.get("yaml"),
+        "stats": result.get("stats"),
+    }

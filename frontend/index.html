@@ -17,10 +17,6 @@
         <span class="logo-dot">·</span>
         <span class="logo-sub">小说转剧本</span>
         <div class="controls">
-            <label class="mode-switch" title="在线 / 离线">
-                <input type="checkbox" id="modeToggle">
-                <span class="mode-label" id="modeLabel">云端</span>
-            </label>
             <span id="statusEl" class="status idle">就绪</span>
             <button class="btn-xs" id="btnLogout" title="退出登录" style="margin-left:8px">退出</button>
         </div>
@@ -56,7 +52,9 @@
             <div class="preview-tabs">
                 <button class="preview-tab active" data-tab="yaml">剧本</button>
                 <button class="preview-tab" data-tab="schema">格式说明</button>
+                <button class="preview-tab" data-tab="translation" id="tabTranslation" style="display:none">🌐 译文</button>
                 <span class="preview-tab-spacer"></span>
+                <button class="btn-icon" id="btnTranslate" title="翻译">🌐</button>
                 <button class="btn-icon" id="btnEditYaml" style="display:none" title="编辑">✎</button>
                 <button class="btn-icon" id="btnDownload" style="display:none" title="下载">↓</button>
             </div>
@@ -67,9 +65,34 @@
                 </div>
                 <pre class="yaml-output" id="yamlOutput" style="display:none"></pre>
                 <textarea class="yaml-editor" id="yamlEditor" style="display:none" spellcheck="false"></textarea>
+                <div class="original-viewer" id="originalViewer" style="display:none">
+                    <div class="original-header">
+                        <span class="original-title" id="originalTitle"></span>
+                        <button class="btn-icon" id="btnCloseOriginal" title="关闭">×</button>
+                    </div>
+                    <pre class="original-content" id="originalContent"></pre>
+                </div>
             </div>
             <div class="preview-content" id="previewSchema" style="display:none">
                 <div class="schema-doc" id="schemaDoc">加载中...</div>
+            </div>
+            <div class="preview-content" id="previewTranslation" style="display:none">
+                <div class="trans-layout">
+                    <div class="trans-list" id="transList">
+                        <div class="trans-list-header">
+                            <span>📋 译文列表</span>
+                            <button class="btn-xs" id="btnRefreshTrans" title="刷新">↻</button>
+                        </div>
+                        <div class="trans-list-items" id="transListItems"></div>
+                    </div>
+                    <div class="trans-main">
+                        <div class="original-header">
+                            <span class="original-title" id="transLabel">🌐 选择一篇译文查看</span>
+                            <button class="btn-icon" id="btnDelTrans" style="display:none;color:var(--red)" title="删除此译文">×</button>
+                        </div>
+                        <pre class="yaml-output" id="transOutput"></pre>
+                    </div>
+                </div>
             </div>
         </section>
 
@@ -100,6 +123,8 @@
                         </div>
                     </div>
                     <div style="display:flex;gap:4px;align-items:center;flex-shrink:0">
+                        <button class="btn-xs" id="btnEditNovel" style="display:none" title="编辑小说章节">✎ 编辑</button>
+                        <button class="btn-xs" id="btnAppendChapters" style="display:none" title="追加章节">📎 追加</button>
                         <button class="btn-icon" id="btnEditMeta" style="display:none" title="编辑信息">✎</button>
                         <button class="btn-icon" id="btnCloseDetail" title="关闭">×</button>
                     </div>
@@ -109,6 +134,25 @@
                         <span class="chapter-count" id="chapterCount"></span>
                     </div>
                     <div class="chapter-list" id="chapterList"></div>
+                </div>
+
+                <!-- 合并剧本区块 -->
+                <div class="merged-scripts-section" id="mergedScriptsSection">
+                    <div class="merged-header">
+                        <span class="merged-title">合并剧本</span>
+                        <button class="btn-icon" id="btnCreateMerge" title="新建合并" style="font-size:16px">+</button>
+                    </div>
+                    <div class="merged-create" id="mergedCreate" style="display:none">
+                        <div class="merged-create-header">选择要合并的章节</div>
+                        <div class="merged-chapter-picker" id="mergeChapterPicker"></div>
+                        <input class="merged-name-input" id="mergeName" placeholder="合并剧本名称，如：序幕、第一幕">
+                        <input class="merged-note-input" id="mergeNote" placeholder="备注（可选）">
+                        <div class="merged-create-actions">
+                            <button class="btn-xs accent" id="btnConfirmMerge">确认合并</button>
+                            <button class="btn-xs" id="btnCancelMerge">取消</button>
+                        </div>
+                    </div>
+                    <div class="merged-list" id="mergedList"></div>
                 </div>
             </div>
         </aside>
@@ -133,6 +177,46 @@
             </div>
         </div>
     </div>
+
+    <!-- 小说编辑模态框 -->
+    <div class="modal-overlay" id="novelEditorModal" style="display:none">
+        <div class="modal-box novel-editor-box">
+            <h2 class="modal-title">编辑小说</h2>
+            <div class="modal-body novel-editor-body">
+                <div class="novel-editor-toc" id="novelEditorToc"></div>
+                <div class="novel-editor-main">
+                    <input class="novel-editor-ch-title" id="editorChTitle" placeholder="章节标题">
+                    <textarea class="novel-editor-ch-content" id="editorChContent" placeholder="章节内容"></textarea>
+                    <div class="novel-editor-status" id="editorStatus"></div>
+                </div>
+            </div>
+            <div class="modal-actions">
+                <button class="btn-primary" id="btnSaveChapter">保存</button>
+                <button class="btn-secondary" id="btnCloseEditor">关闭</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 同步预览模态框 -->
+    <div class="modal-overlay" id="syncModal" style="display:none">
+        <div class="modal-box sync-box">
+            <h2 class="modal-title" id="syncTitle">章节同步预览</h2>
+            <div class="modal-body sync-body">
+                <div class="sync-summary" id="syncSummary"></div>
+                <div class="sync-new-section" id="syncNewSection"></div>
+                <div class="sync-mod-section" id="syncModSection"></div>
+                <div class="sync-unchanged" id="syncUnchanged"></div>
+                <p class="sync-hint">已修改章节重新转换后，合并剧本会自动更新</p>
+            </div>
+            <div class="modal-actions">
+                <button class="btn-primary" id="btnSyncApply">确认同步</button>
+                <button class="btn-secondary" id="btnSyncClose">取消</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 追加章节 file input -->
+    <input type="file" id="appendFileInput" accept=".txt,.text,.md,.docx,.epub" style="position:fixed;left:-9999px;top:0">
 
     <!-- Toast -->
     <div class="toast" id="toast"></div>

@@ -56,6 +56,7 @@ def _init_tables(conn: sqlite3.Connection):
             yaml_content    TEXT    NOT NULL DEFAULT '',
             character_count INTEGER NOT NULL DEFAULT 0,
             scene_count     INTEGER NOT NULL DEFAULT 0,
+            manually_edited INTEGER NOT NULL DEFAULT 0,
             created_at      TEXT    NOT NULL DEFAULT (datetime('now','localtime')),
             updated_at      TEXT    NOT NULL DEFAULT (datetime('now','localtime')),
             FOREIGN KEY (novel_id) REFERENCES novels(id) ON DELETE CASCADE
@@ -87,6 +88,55 @@ def _init_tables(conn: sqlite3.Connection):
             FOREIGN KEY (novel_id) REFERENCES novels(id) ON DELETE CASCADE
         );
         CREATE UNIQUE INDEX IF NOT EXISTS idx_cc_novel_ch ON context_cache(novel_id, chapter_number);
+
+        -- 迁移：为已有数据库补齐 manually_edited 列
+        PRAGMA table_info('scripts');
+    """)
+    # 检查 scripts 表是否有 manually_edited 列，没有则添加
+    cols = {r[1] for r in conn.execute("PRAGMA table_info('scripts')").fetchall()}
+    if 'manually_edited' not in cols:
+        conn.execute("ALTER TABLE scripts ADD COLUMN manually_edited INTEGER NOT NULL DEFAULT 0")
+        conn.commit()
+
+    conn.executescript("""
+
+        CREATE TABLE IF NOT EXISTS merged_scripts (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            script_id       INTEGER NOT NULL,
+            novel_id        INTEGER NOT NULL,
+            title           TEXT    NOT NULL DEFAULT '（未命名）',
+            note            TEXT    NOT NULL DEFAULT '',
+            yaml_content    TEXT    NOT NULL DEFAULT '',
+            character_count INTEGER NOT NULL DEFAULT 0,
+            scene_count     INTEGER NOT NULL DEFAULT 0,
+            created_at      TEXT    NOT NULL DEFAULT (datetime('now','localtime')),
+            updated_at      TEXT    NOT NULL DEFAULT (datetime('now','localtime')),
+            FOREIGN KEY (script_id) REFERENCES scripts(id) ON DELETE CASCADE,
+            FOREIGN KEY (novel_id)  REFERENCES novels(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_ms_script ON merged_scripts(script_id);
+
+        CREATE TABLE IF NOT EXISTS merged_script_items (
+            id                INTEGER PRIMARY KEY AUTOINCREMENT,
+            merged_script_id  INTEGER NOT NULL,
+            script_chapter_id INTEGER NOT NULL,
+            chapter_number    REAL    NOT NULL,
+            sort_order        INTEGER NOT NULL DEFAULT 0,
+            FOREIGN KEY (merged_script_id)  REFERENCES merged_scripts(id) ON DELETE CASCADE,
+            FOREIGN KEY (script_chapter_id) REFERENCES script_chapters(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_msi_merge ON merged_script_items(merged_script_id);
+
+        CREATE TABLE IF NOT EXISTS translations (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            target_type     TEXT    NOT NULL,
+            target_id       INTEGER NOT NULL,
+            language        TEXT    NOT NULL DEFAULT 'en',
+            language_label  TEXT    NOT NULL DEFAULT 'English',
+            translated_yaml TEXT    NOT NULL DEFAULT '',
+            created_at      TEXT    NOT NULL DEFAULT (datetime('now','localtime'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_tr_target ON translations(target_type, target_id);
 
         CREATE TABLE IF NOT EXISTS users (
             id              INTEGER PRIMARY KEY AUTOINCREMENT,

@@ -23,6 +23,90 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["convert"])
 
 
+# ══════════════════════════════════════════════════════════════
+# 自动合并：转换完成后自动拼装完整 YAML
+# ══════════════════════════════════════════════════════════════
+
+def _auto_merge(script_id: int, novel_id: int, title_override: str = None) -> dict:
+    """将当前剧本的所有已转换章节合并为完整 YAML 并存入 scripts.yaml_content。
+    如果剧本被手动编辑过则跳过。
+    返回 {"merged": bool, "yaml": str|None, "stats": dict|None}
+    """
+    if script_repo.is_manually_edited(script_id):
+        logger.info(f"[AutoMerge] 剧本 {script_id} 已手动编辑，跳过自动合并")
+        return {"merged": False, "yaml": None, "stats": None}
+
+    script = script_repo.get_script(script_id)
+    if not script:
+        return {"merged": False, "yaml": None, "stats": None}
+
+    chapters_data = script.get("chapters", [])
+    if not chapters_data:
+        return {"merged": False, "yaml": None, "stats": None}
+
+    novel = novel_repo.get_novel(novel_id)
+    if not novel:
+        return {"merged": False, "yaml": None, "stats": None}
+
+    # 收集所有场景
+    all_scenes = []
+    for ch in sorted(chapters_data, key=lambda c: c["chapter_number"]):
+        try:
+            ch_data = yaml.safe_load(ch["yaml_content"])
+            if isinstance(ch_data, dict):
+                scenes = ch_data.get("scenes", [])
+                for s in scenes:
+                    s["source_chapter"] = ch["chapter_number"]
+                    s["_chapter_num"] = ch["chapter_number"]
+                all_scenes.extend(scenes)
+        except Exception as e:
+            logger.warning(f"[AutoMerge] 解析第{ch['chapter_number']}章 YAML 失败: {e}")
+
+    if not all_scenes:
+        return {"merged": False, "yaml": None, "stats": None}
+
+    # 提取人物
+    chapters_for_extract = novel_repo.get_chapters_with_content(novel_id)
+    characters = extract_characters(chapters_for_extract, novel_id)
+
+    # 合并
+    final_script = merge(characters, all_scenes)
+    final_script["meta"]["title"] = title_override or novel.get("title", "（未命名）")
+    final_script["meta"]["original_author"] = novel.get("author", "（未知）")
+
+    yaml_str = dump_yaml(final_script)
+
+    script_repo.auto_save_yaml(
+        script_id, yaml_str,
+        len(final_script.get("characters", [])),
+        len(final_script.get("scenes", [])),
+    )
+
+    # 输出文件
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
+    safe_title = re.sub(r'[\\/:*?"<>|]', '_', final_script["meta"].get("title", "script"))
+    out_path = os.path.join(OUTPUT_DIR, f"{safe_title}.yaml")
+    try:
+        with open(out_path, "w", encoding="utf-8") as f:
+            f.write(yaml_str)
+    except Exception as e:
+        logger.warning(f"[AutoMerge] 写入文件失败: {e}")
+
+    logger.info(
+        f"[AutoMerge] 剧本 {script_id}: {len(final_script.get('characters', []))} 人, "
+        f"{len(final_script.get('scenes', []))} 场景"
+    )
+    return {
+        "merged": True, "yaml": yaml_str, "output_file": out_path,
+        "stats": {
+            "chapters": len(chapters_data),
+            "characters": len(final_script.get("characters", [])),
+            "scenes": len(final_script.get("scenes", [])),
+            "acts": len(final_script.get("acts", [])),
+        },
+    }
+
+
 # ── 批量转换（必须注册在单章转换前面，否则 /convert/batch 会被 {chapter_num} 吃掉）──
 
 @router.post("/novels/{novel_id}/convert/batch")
@@ -38,7 +122,7 @@ async def convert_batch(novel_id: int, request: Request):
         return JSONResponse({"status": "error", "message": "小说不存在"}, status_code=404)
 
     script = script_repo.get_or_create_draft_script(novel_id, novel.get("title", "（未命名）"))
-    chapters_for_extract = novel.get("chapters", [])
+    chapters_for_extract = novel_repo.get_chapters_with_content(novel_id)
     characters = await asyncio.to_thread(extract_characters, chapters_for_extract, novel_id)
 
     results = []
@@ -49,12 +133,12 @@ async def convert_batch(novel_id: int, request: Request):
             results.append({"chapter_number": cn, "status": "error", "message": "章节不存在"})
             continue
 
-        # 检查是否已在其他剧本中转换过 → 直接复用
+        # 检查是否已有转换结果（当前剧本或其他剧本均可）→ 直接复用，避免重复调用 LLM
         existing_chapters = script_repo.get_chapter_scenes(novel_id, cn)
         reused_yaml = None
         if existing_chapters:
             for ec in existing_chapters:
-                if ec["script_id"] != script["id"] and ec.get("yaml_content"):
+                if ec.get("yaml_content"):
                     reused_yaml = ec["yaml_content"]
                     break
 
@@ -96,15 +180,18 @@ async def convert_batch(novel_id: int, request: Request):
         })
 
     generated = script_repo.get_generated_chapter_numbers(novel_id, script["id"])
-    can_merge = len(generated) >= 3
+
+    # 自动合并
+    merge_result = _auto_merge(script["id"], novel_id)
 
     return {
         "status": "ok",
         "script_id": script["id"],
         "results": results,
-        "can_merge": can_merge,
         "generated_chapters": sorted(generated),
         "total_chapters": len(novel.get("chapters", [])),
+        "merged_yaml": merge_result.get("yaml"),
+        "merged_stats": merge_result.get("stats"),
     }
 
 
@@ -132,12 +219,12 @@ async def convert_single_chapter(novel_id: int, chapter_num: float,
     # 获取或创建草稿剧本
     script = script_repo.get_or_create_draft_script(novel_id, novel.get("title", "（未命名）"))
 
-    # 检查是否已在其他剧本中转换过 → 直接复用，不走 LLM
+    # 检查是否已有转换结果（当前剧本或其他剧本均可）→ 直接复用，不走 LLM
     existing_chapters = script_repo.get_chapter_scenes(novel_id, chapter_num)
     reused_yaml = None
     if existing_chapters:
         for ec in existing_chapters:
-            if ec["script_id"] != script["id"] and ec.get("yaml_content"):
+            if ec.get("yaml_content"):
                 reused_yaml = ec["yaml_content"]
                 break
 
@@ -153,8 +240,8 @@ async def convert_single_chapter(novel_id: int, chapter_num: float,
         summary = None
         logger.info(f"[Convert] 复用已有场景: novel_id={novel_id}, chapter={chapter_num} → {scenes_count}场景")
     else:
-        # 人物提取（优先走缓存）
-        chapters_for_extract = novel.get("chapters", []) or [chapter]
+        # 人物提取（优先走缓存；需要章节正文）
+        chapters_for_extract = novel_repo.get_chapters_with_content(novel_id) or [chapter]
         characters = await asyncio.to_thread(extract_characters, chapters_for_extract, novel_id)
 
         # 构建上下文
@@ -181,27 +268,29 @@ async def convert_single_chapter(novel_id: int, chapter_num: float,
     script_repo.save_script_chapter(script["id"], novel_id, chapter_num, chapter_yaml, scenes_count)
 
     generated = script_repo.get_generated_chapter_numbers(novel_id, script["id"])
-    can_merge = len(generated) >= 3
+
+    # 自动合并：转换完成后立即拼装完整 YAML
+    merge_result = _auto_merge(script["id"], novel_id)
 
     return {
         "status": "ok",
         "chapter_number": chapter_num,
         "yaml": chapter_yaml,
+        "merged_yaml": merge_result.get("yaml"),
         "scenes_count": scenes_count,
         "summary": summary,
         "script_id": script["id"],
         "generated_chapters": sorted(generated),
         "total_chapters": len(novel.get("chapters", [])),
-        "can_merge": can_merge,
         "reused": reused_yaml is not None,
     }
 
 
-# ── 合并为完整剧本 ──
+# ── 锁定剧本（发布最终版本，禁止后续修改）──
 
 @router.post("/scripts/{script_id}/merge")
-async def merge_script(script_id: int, req: dict = None):
-    """将逐章场景合并为完整剧本 YAML"""
+async def lock_script(script_id: int, req: dict = None):
+    """锁定剧本：将当前草稿冻结为完整版本。合并已自动完成，此接口只改状态。"""
     script = script_repo.get_script(script_id)
     if not script:
         return JSONResponse({"status": "error", "message": "剧本不存在"}, status_code=404)
@@ -215,60 +304,33 @@ async def merge_script(script_id: int, req: dict = None):
     if not chapters_data:
         return JSONResponse({"status": "error", "message": "该剧本还没有生成任何章节场景"}, status_code=400)
 
-    all_scenes = []
-    for ch in sorted(chapters_data, key=lambda c: c["chapter_number"]):
-        try:
-            ch_data = yaml.safe_load(ch["yaml_content"])
-            if isinstance(ch_data, dict):
-                scenes = ch_data.get("scenes", [])
-                for s in scenes:
-                    s["source_chapter"] = ch["chapter_number"]
-                    s["_chapter_num"] = ch["chapter_number"]
-                all_scenes.extend(scenes)
-                logger.info(f"[Merge] 第{ch['chapter_number']}章: {len(scenes)} 场景")
-        except Exception as e:
-            logger.warning(f"[Merge] 解析第{ch['chapter_number']}章 YAML 失败: {e}")
+    # 确保 yaml_content 是最新的（防止自动合并被跳过的情况）
+    yaml_str = script.get("yaml_content", "")
+    if not yaml_str:
+        merge_result = _auto_merge(script_id, novel_id,
+                                   title_override=(req or {}).get("title") if req else None)
+        yaml_str = merge_result.get("yaml", "")
+        if not yaml_str:
+            return JSONResponse({"status": "error", "message": "合并失败"}, status_code=500)
 
-    if len(all_scenes) < 3:
-        return JSONResponse(
-            {"status": "error", "message": f"场景数不足 ({len(all_scenes)}), 需要至少3个"}, status_code=400)
-
-    chapters_for_extract = novel.get("chapters", [])
-    characters = await asyncio.to_thread(extract_characters, chapters_for_extract, novel_id)
-
-    final_script = merge(characters, all_scenes)
-    # 处理 title：前端可能传 null / 空字符串 / 不传
+    # 标题处理
     raw_title = (req or {}).get("title") if req else None
-    if raw_title and str(raw_title).strip():
-        final_script["meta"]["title"] = str(raw_title).strip()
-    else:
-        final_script["meta"]["title"] = novel.get("title", "（未命名）")
-    final_script["meta"]["original_author"] = novel.get("author", "（未知）")
+    title = str(raw_title).strip() if raw_title and str(raw_title).strip() else novel.get("title", "（未命名）")
 
-    yaml_str = dump_yaml(final_script)
+    char_count = script.get("character_count", 0)
+    scene_count = script.get("scene_count", 0)
 
-    script_repo.finalize_script(
-        script_id, yaml_str,
-        len(final_script.get("characters", [])),
-        len(final_script.get("scenes", [])),
-    )
-
-    os.makedirs(OUTPUT_DIR, exist_ok=True)
-    safe_title = re.sub(r'[\\/:*?"<>|]', '_', final_script["meta"].get("title", "script"))
-    out_path = os.path.join(OUTPUT_DIR, f"{safe_title}.yaml")
-    with open(out_path, "w", encoding="utf-8") as f:
-        f.write(yaml_str)
+    script_repo.finalize_script(script_id, yaml_str, char_count, scene_count)
 
     return {
         "status": "ok",
         "yaml": yaml_str,
         "script_id": script_id,
-        "output_file": out_path,
+        "message": "剧本已锁定",
         "stats": {
             "chapters": len(chapters_data),
-            "characters": len(final_script.get("characters", [])),
-            "scenes": len(final_script.get("scenes", [])),
-            "acts": len(final_script.get("acts", [])),
+            "characters": char_count,
+            "scenes": scene_count,
         },
     }
 

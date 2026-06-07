@@ -3,7 +3,7 @@
 import json
 import logging
 from typing import List, Optional
-from app.config import LLM_TEMPERATURE, LLM_MODE
+from app.config import LLM_TEMPERATURE
 from app.schemas.prompts import EXTRACTOR_SYSTEM_PROMPT
 from app.services.llm import get_client, get_model
 
@@ -19,7 +19,7 @@ def extract_characters(chapters: List[dict], novel_id: int = None) -> List[dict]
             logger.info(f"[Extractor] 从缓存加载 {len(cached)} 个人物（novel_id={novel_id}）")
             return cached
 
-    if LLM_MODE == "online" and not _has_api_key():
+    if not _has_api_key():
         logger.warning("未配置 API Key，使用空人物表")
         return []
 
