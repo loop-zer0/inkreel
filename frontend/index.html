@@ -47,11 +47,10 @@
         <!-- 拖拽手柄：左栏 ↔ 中栏 -->
         <div class="resize-handle" id="resizeLeft" title="拖拽调节宽度"></div>
 
-        <!-- 中栏：YAML 预览 + Schema -->
+        <!-- 中栏：YAML 预览 -->
         <section class="preview-section">
             <div class="preview-tabs">
                 <button class="preview-tab active" data-tab="yaml">剧本</button>
-                <button class="preview-tab" data-tab="schema">格式说明</button>
                 <button class="preview-tab" data-tab="translation" id="tabTranslation" style="display:none">🌐 译文</button>
                 <span class="preview-tab-spacer"></span>
                 <button class="btn-icon" id="btnTranslate" title="翻译">🌐</button>
@@ -72,9 +71,6 @@
                     </div>
                     <pre class="original-content" id="originalContent"></pre>
                 </div>
-            </div>
-            <div class="preview-content" id="previewSchema" style="display:none">
-                <div class="schema-doc" id="schemaDoc">加载中...</div>
             </div>
             <div class="preview-content" id="previewTranslation" style="display:none">
                 <div class="trans-layout">

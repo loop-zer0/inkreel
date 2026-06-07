@@ -180,6 +180,12 @@ async def app_page():
     return FileResponse(os.path.join(FRONTEND_DIR, "index.html"))
 
 
+@app.get("/schema")
+async def schema_page():
+    """剧本格式说明页"""
+    return FileResponse(os.path.join(FRONTEND_DIR, "schema.html"))
+
+
 @app.get("/")
 async def landing():
     """产品介绍页"""

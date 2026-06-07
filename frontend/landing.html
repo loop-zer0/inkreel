@@ -82,6 +82,40 @@
             font-size: 14px;
             color: var(--text2);
         }
+        .nav-links {
+            display: flex;
+            align-items: center;
+            gap: 28px;
+        }
+        .nav-link {
+            position: relative;
+            color: var(--text2);
+            text-decoration: none;
+            font-size: 14px;
+            font-weight: 500;
+            padding: 4px 0;
+            transition: color 0.2s;
+            cursor: pointer;
+        }
+        .nav-link::after {
+            content: '';
+            position: absolute;
+            left: 0;
+            bottom: 0;
+            width: 100%;
+            height: 2px;
+            background: var(--accent);
+            border-radius: 1px;
+            transform: scaleX(0);
+            transform-origin: left;
+            transition: transform 0.25s ease;
+        }
+        .nav-link:hover {
+            color: var(--text);
+        }
+        .nav-link:hover::after {
+            transform: scaleX(1);
+        }
         .nav-cta {
             display: inline-flex;
             align-items: center;
@@ -394,7 +428,7 @@
             .step-arrow { display: none; }
         }
 
-.auth-overlay{position:fixed;inset:0;z-index:5000;display:flex;align-items:center;justify-content:center}.auth-backdrop{position:absolute;inset:0;background:rgba(0,0,0,.25);backdrop-filter:blur(6px)}.auth-card{position:relative;z-index:1;width:380px;max-width:90vw;background:var(--bg);border:1px solid var(--border);box-shadow:0 8px 40px rgba(0,0,0,.1)}.auth-header{display:flex;align-items:center;gap:4px;padding:20px 24px 16px;border-bottom:1px solid var(--border)}.auth-logo{font-size:16px;font-weight:700;color:var(--text)}.auth-dot{color:var(--accent);font-weight:700;font-size:18px}.auth-sub{font-size:11px;color:var(--text3)}.auth-body{padding:20px 24px 24px}.auth-tabs{display:flex;margin-bottom:20px;border-bottom:1px solid var(--border)}.auth-tab{padding:8px 16px 8px 0;margin-right:8px;border:none;background:0 0;color:var(--text3);font-size:12px;font-weight:500;cursor:pointer;font-family:inherit;border-bottom:2px solid transparent;margin-bottom:-1px}.auth-tab.active{color:var(--accent);border-bottom-color:var(--accent)}.auth-form{display:flex;flex-direction:column;gap:12px}.auth-input{padding:10px 12px;background:var(--bg);border:1px solid var(--border);color:var(--text);font-size:13px;font-family:inherit;width:100%;box-sizing:border-box}.auth-input:focus{outline:0;border-color:var(--accent)}.auth-input::placeholder{color:var(--text3)}.auth-submit{padding:10px 0;background:var(--text);color:#fff;border:0;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;margin-top:4px}.auth-submit:hover{background:#333}.auth-code-btn{padding:10px 14px;background:0 0;color:var(--accent);border:1px solid rgba(91,122,110,.3);font-size:12px;cursor:pointer;font-family:inherit;white-space:nowrap}.auth-error{font-size:12px;color:#b8685a;min-height:16px}.auth-success{font-size:12px;color:#5b8c6e;word-break:break-all}.auth-reset-hint{font-size:12px;color:var(--text2);line-height:1.6;margin-bottom:4px}.auth-code-timer{font-size:11px;color:var(--text3);text-align:right;min-height:16px}
+.auth-overlay{position:fixed;inset:0;z-index:5000;display:flex;align-items:center;justify-content:center}.auth-backdrop{position:absolute;inset:0;background:rgba(0,0,0,.25);backdrop-filter:blur(6px)}.auth-card{position:relative;z-index:1;width:380px;max-width:90vw;background:var(--bg);border:1px solid var(--border);box-shadow:0 8px 40px rgba(0,0,0,.1)}.auth-header{display:flex;align-items:center;gap:4px;padding:20px 24px 16px;border-bottom:1px solid var(--border)}.auth-close{position:absolute;top:14px;right:18px;background:0;border:0;color:var(--text3);font-size:20px;cursor:pointer;padding:4px 8px;line-height:1;border-radius:6px;transition:color .15s,background .15s}.auth-close:hover{color:var(--text);background:var(--accent-dim)}.auth-logo{font-size:16px;font-weight:700;color:var(--text)}.auth-dot{color:var(--accent);font-weight:700;font-size:18px}.auth-sub{font-size:11px;color:var(--text3)}.auth-body{padding:20px 24px 24px}.auth-tabs{display:flex;margin-bottom:20px;border-bottom:1px solid var(--border)}.auth-tab{padding:8px 16px 8px 0;margin-right:8px;border:none;background:0 0;color:var(--text3);font-size:12px;font-weight:500;cursor:pointer;font-family:inherit;border-bottom:2px solid transparent;margin-bottom:-1px}.auth-tab.active{color:var(--accent);border-bottom-color:var(--accent)}.auth-form{display:flex;flex-direction:column;gap:12px}.auth-input{padding:10px 12px;background:var(--bg);border:1px solid var(--border);color:var(--text);font-size:13px;font-family:inherit;width:100%;box-sizing:border-box}.auth-input:focus{outline:0;border-color:var(--accent)}.auth-input::placeholder{color:var(--text3)}.auth-submit{padding:10px 0;background:var(--text);color:#fff;border:0;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;margin-top:4px}.auth-submit:hover{background:#333}.auth-code-btn{padding:10px 14px;background:0 0;color:var(--accent);border:1px solid rgba(91,122,110,.3);font-size:12px;cursor:pointer;font-family:inherit;white-space:nowrap}.auth-error{font-size:12px;color:#b8685a;min-height:16px}.auth-success{font-size:12px;color:#5b8c6e;word-break:break-all}.auth-reset-hint{font-size:12px;color:var(--text2);line-height:1.6;margin-bottom:4px}.auth-code-timer{font-size:11px;color:var(--text3);text-align:right;min-height:16px}
     </style>
 </head>
 <body>
@@ -410,7 +444,11 @@
             <span class="nav-dot">·</span>
             <span class="nav-sub">小说转剧本</span>
         </a>
-        <a href="#" class="nav-cta" id="btnNavStart">开始使用 →</a>
+        <div class="nav-links">
+            <a href="#features" class="nav-link">产品介绍</a>
+            <a href="/schema" class="nav-link">格式说明</a>
+            <a href="#" class="nav-cta" id="btnNavStart">开始使用 →</a>
+        </div>
     </nav>
 
     <!-- Hero -->
@@ -852,7 +890,7 @@
     <div class="auth-overlay" id="loginModal" style="display:none">
         <div class="auth-backdrop"></div>
         <div class="auth-card">
-            <div class="auth-header"><span class="auth-logo">InkReel</span><span class="auth-dot">·</span><span class="auth-sub">小说转剧本</span></div>
+            <div class="auth-header"><span class="auth-logo">InkReel</span><span class="auth-dot">·</span><span class="auth-sub">小说转剧本</span><button class="auth-close" id="btnCloseAuth">×</button></div>
             <div class="auth-body">
                 <div class="auth-tabs">
                     <button class="auth-tab modal-tab active" data-tab="login">登录</button>

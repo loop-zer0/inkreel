@@ -52,12 +52,26 @@ const Util = {
         return '<p>' + html + '</p>';
     },
 
+    _toastQueue: [],
+    _toasting: false,
+
     showToast(msg, type) {
+        this._toastQueue.push({ msg, type });
+        if (!this._toasting) this._nextToast();
+    },
+
+    _nextToast() {
+        if (this._toastQueue.length === 0) { this._toasting = false; return; }
+        this._toasting = true;
+        const { msg, type } = this._toastQueue.shift();
         const toast = document.getElementById('toast');
         toast.textContent = msg;
         toast.className = 'toast ' + type + ' show';
         clearTimeout(toast._t);
-        toast._t = setTimeout(() => toast.classList.remove('show'), 3000);
+        toast._t = setTimeout(() => {
+            toast.classList.remove('show');
+            setTimeout(() => this._nextToast(), 200);
+        }, type === 'error' ? 4000 : 2200);
     },
 
     // 防抖工厂

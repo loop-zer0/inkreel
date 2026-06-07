@@ -246,6 +246,7 @@ const View = {
 
         // 章节行
         const generatedSet = new Set(generated);
+        const convertingSet = new Set(App.state.convertingChapters || []);
         // 收集所有已有结果的 chapter_number（跨剧本）
         const allDoneSet = new Set();
         if (currentScript && currentScript.chapters) {
@@ -257,30 +258,35 @@ const View = {
             const title = c.title || '';
             const chars = c.chars ? this._formatSize(c.chars) : '';
             const isChecked = App.state.selectedChapters.has(num);
+            const isConverting = convertingSet.has(num);
             const doneHere = generatedSet.has(num);
             const doneElsewhere = !doneHere && allDoneSet.has(num);
-            const elsewhereClass = doneElsewhere ? ' elsewhere' : '';
+            const elsewhereClass = (doneElsewhere && !isConverting) ? ' elsewhere' : '';
+            const convertingClass = isConverting ? ' converting' : '';
             const checkedClass = isChecked ? ' checked' : '';
+            const doneClass = doneHere ? ' done' : '';
 
-            const statusHTML = doneHere
-                ? '<span class="ch-status done">✓已转</span>'
-                : doneElsewhere
-                    ? '<span class="ch-status elsewhere">已在其他改编</span>'
-                    : '<span class="ch-status pending">待转</span>';
+            let statusHTML;
+            if (isConverting) {
+                statusHTML = '<span class="ch-status converting">⏳ 转换中</span>';
+            } else if (doneHere) {
+                statusHTML = '<span class="ch-status done">✓已转</span>';
+            } else if (doneElsewhere) {
+                statusHTML = '<span class="ch-status elsewhere">已在其他改编</span>';
+            } else {
+                statusHTML = '<span class="ch-status pending">待转</span>';
+            }
 
-            const actionsHTML = doneHere
-                ? `<button class="btn-xs ch-btn-view" data-ch="${num}">YAML</button>
-                   <button class="btn-xs ch-btn-original" data-ch="${num}">📖 原文</button>
-                   <button class="btn-xs ch-btn-convert" data-ch="${num}">🔄重转</button>`
-                : doneElsewhere
-                    ? `<button class="btn-xs ch-btn-reuse" data-ch="${num}">📋复用</button>
-                       <button class="btn-xs ch-btn-original" data-ch="${num}">📖 原文</button>`
-                    : `<button class="btn-xs ch-btn-convert" data-ch="${num}">🎬转换</button>
-                       <button class="btn-xs ch-btn-original" data-ch="${num}">📖 原文</button>`;
+            let actionsHTML;
+            if (!isConverting) {
+                actionsHTML = `<button class="ch-menu-trigger" data-ch="${num}">⋯</button>`;
+            } else {
+                actionsHTML = '';
+            }
 
             return `
-            <div class="chapter-item${elsewhereClass}${checkedClass}">
-                <input type="checkbox" class="ch-checkbox" data-ch="${num}"${isChecked ? ' checked' : ''}>
+            <div class="chapter-item${elsewhereClass}${convertingClass}${doneClass}${checkedClass}">
+                ${isConverting ? '' : `<input type="checkbox" class="ch-checkbox" data-ch="${num}"${isChecked ? ' checked' : ''}>`}
                 <span class="ch-num">${num}</span>
                 <span class="ch-title">${this._esc(title)}</span>
                 ${chars ? '<span class="ch-chars">' + chars + '</span>' : ''}
@@ -534,10 +540,6 @@ const View = {
     showTranslationTab() {
         document.getElementById('tabTranslation').style.display = '';
         document.getElementById('btnTranslate').style.display = '';
-        // 自动加载译文列表
-        if (App.state.currentScriptId) {
-            App._loadTranslations();
-        }
     },
 
     hideTranslationTab() {
@@ -623,6 +625,50 @@ const View = {
         document.getElementById('originalViewer').style.display = 'none';
     },
 
+    // ── 章节操作菜单 ──
+
+    showChapterMenu(trigger, chNum) {
+        // 关闭旧菜单
+        this._closeChapterMenu();
+        // 判断该章状态
+        const done = App.state.generatedChapters.includes(chNum);
+        const elsewhere = !done && App.state.availableScripts[0]?.chapters?.some(c => c.chapter_number === chNum);
+        const items = [];
+        if (done) {
+            items.push({ icon: '📄', label: '查看 YAML', k: 'view' });
+            items.push({ icon: '📖', label: '查看原文', k: 'orig' });
+            items.push({ icon: '🔄', label: '重转', k: 'convert' });
+        } else if (elsewhere) {
+            items.push({ icon: '📋', label: '复用', k: 'reuse' });
+            items.push({ icon: '📖', label: '查看原文', k: 'orig' });
+        } else {
+            items.push({ icon: '🎬', label: '转换', k: 'convert' });
+            items.push({ icon: '📖', label: '查看原文', k: 'orig' });
+        }
+        items.push({ icon: '🗑️', label: '删除本章', k: 'delete', sep: true });
+        const menu = document.createElement('div');
+        menu.className = 'ch-menu';
+        menu.id = 'chPopupMenu';
+        menu.innerHTML = items.map(it =>
+            (it.sep ? '<div class="ch-menu-sep"></div>' : '') +
+            `<div class="ch-menu-item${it.k === 'delete' ? ' ch-menu-item-del' : ''}" data-k="${it.k}" data-ch="${chNum}"><span class="ch-menu-icon">${it.icon}</span>${it.label}</div>`
+        ).join('');
+        document.body.appendChild(menu);
+        // 定位
+        const rect = trigger.getBoundingClientRect();
+        menu.style.top = rect.bottom + 4 + 'px';
+        menu.style.left = Math.min(rect.left, window.innerWidth - 140) + 'px';
+        setTimeout(() => {
+            document.addEventListener('click', this._closeChapterMenu, { once: true });
+        }, 0);
+    },
+
+    _closeChapterMenu() {
+        const m = document.getElementById('chPopupMenu');
+        if (m) m.remove();
+        document.removeEventListener('click', this._closeChapterMenu);
+    },
+
     // ── 辅助 ──
 
     scrollToYaml() {
@@ -688,55 +734,7 @@ const View = {
     },
 };
 
-// ══════════════════════════════════════════════════════════════
-// Resizer — 面板拖拽调节宽度
-// ══════════════════════════════════════════════════════════════
-
-const Resizer = {
-    init() {
-        this._setup('resizeLeft', '--sidebar-w', 200, 420);
-        this._setup('resizeRight', '--detail-w', 220, 480);
-    },
-
-    _setup(handleId, cssVar, minW, maxW) {
-        const handle = document.getElementById(handleId);
-        if (!handle) return;
-        const layout = document.querySelector('.main-layout');
-        if (!layout) return;
-
-        let dragging = false;
-
-        handle.addEventListener('mousedown', (e) => {
-            dragging = true;
-            handle.classList.add('active');
-            document.body.style.cursor = 'col-resize';
-            document.body.style.userSelect = 'none';
-            e.preventDefault();
-        });
-
-        document.addEventListener('mousemove', (e) => {
-            if (!dragging) return;
-            const rect = layout.getBoundingClientRect();
-            let newW;
-            if (handleId === 'resizeLeft') {
-                newW = e.clientX - rect.left;
-            } else {
-                newW = rect.right - e.clientX;
-            }
-            newW = Math.max(minW, Math.min(maxW, newW));
-            layout.style.setProperty(cssVar, newW + 'px');
-        });
-
-        document.addEventListener('mouseup', () => {
-            if (dragging) {
-                dragging = false;
-                handle.classList.remove('active');
-                document.body.style.cursor = '';
-                document.body.style.userSelect = '';
-            }
-        });
-    },
-};
+// Resizer 定义在 utils.js 中，此处不重复声明
 
 
 // ══════════════════════════════════════════════════════════════

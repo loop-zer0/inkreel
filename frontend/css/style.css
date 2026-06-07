@@ -606,9 +606,70 @@ body {
     font-family: var(--font-mono);
 }
 .chapter-item .ch-actions {
-    display: flex;
-    gap: 3px;
     flex-shrink: 0;
+    width: 20px;
+    text-align: center;
+}
+.ch-menu-trigger {
+    background: none;
+    border: none;
+    color: var(--text3);
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 700;
+    padding: 0 4px;
+    line-height: 1;
+    border-radius: 4px;
+    transition: color 0.15s, background 0.15s;
+    font-family: inherit;
+}
+.ch-menu-trigger:hover {
+    color: var(--text);
+    background: var(--accent-dim);
+}
+/* 弹出菜单 */
+.ch-menu {
+    position: fixed;
+    z-index: 1000;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    box-shadow: 0 4px 18px rgba(0,0,0,0.1);
+    min-width: 100px;
+    padding: 4px;
+    animation: menu-in 0.12s ease;
+}
+.ch-menu-item {
+    padding: 6px 12px;
+    font-size: 12px;
+    cursor: pointer;
+    border-radius: 5px;
+    color: var(--text2);
+    transition: background 0.1s;
+    white-space: nowrap;
+    display: flex;
+    align-items: center;
+}
+.ch-menu-icon {
+    width: 22px;
+    text-align: center;
+    flex-shrink: 0;
+    font-size: 13px;
+}
+.ch-menu-item:hover {
+    background: var(--accent-dim);
+    color: var(--text);
+}
+.ch-menu-item-del { color: #b8685a; }
+.ch-menu-item-del:hover { background: rgba(184,104,90,0.1); }
+.ch-menu-sep {
+    height: 1px;
+    background: var(--border);
+    margin: 4px 8px;
+}
+@keyframes menu-in {
+    from { opacity: 0; transform: translateY(-4px); }
+    to   { opacity: 1; transform: translateY(0); }
 }
 .chapter-item .ch-status {
     font-size: 9px;
@@ -625,8 +686,23 @@ body {
     font-size: 9px;
     padding: 1px 6px;
 }
+.chapter-item .ch-status.converting {
+    color: var(--accent);
+    animation: spin-text 1.5s ease-in-out infinite;
+}
 .chapter-item.elsewhere { opacity: 0.55; }
 .chapter-item.elsewhere:hover { opacity: 1; }
+.chapter-item.converting {
+    background: rgba(91,122,110,0.06);
+    border-left: 2px solid var(--accent);
+}
+.chapter-item.done {
+    border-left: 2px solid var(--green);
+}
+@keyframes spin-text {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
 
 /* Batch bar */
 .ch-batch-bar {

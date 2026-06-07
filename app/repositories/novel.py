@@ -251,6 +251,34 @@ def update_chapter(chapter_id: int, title: str = None, content: str = None) -> b
         db.close()
 
 
+def delete_chapter(chapter_id: int) -> Optional[int]:
+    """删除单章，返回 novel_id 以便前端刷新。不存在返回 None"""
+    db = get_db()
+    try:
+        row = db.execute("SELECT novel_id FROM novel_chapters WHERE id = ?", (chapter_id,)).fetchone()
+        if not row:
+            return None
+        nid = row["novel_id"]
+        db.execute("DELETE FROM novel_chapters WHERE id = ?", (chapter_id,))
+        # 更新小说的章节数
+        actual_count = db.execute(
+            "SELECT COUNT(*) as cnt FROM novel_chapters WHERE novel_id = ?", (nid,)
+        ).fetchone()["cnt"]
+        db.execute(
+            "UPDATE novels SET chapter_count = ?, updated_at = datetime('now','localtime') WHERE id = ?",
+            (actual_count, nid),
+        )
+        db.commit()
+        logger.info(f"[NovelRepo] 章节已删除: id={chapter_id}, novel={nid}, remaining={actual_count}")
+        return nid
+    except Exception as e:
+        db.rollback()
+        logger.error(f"[NovelRepo] 删除章节失败: {e}")
+        return None
+    finally:
+        db.close()
+
+
 def append_chapters(novel_id: int, chapters: List[dict]) -> dict:
     """追加新章节。跳过已存在的章节号，返回 {added: int, skipped: int}"""
     db = get_db()

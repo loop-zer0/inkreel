@@ -29,12 +29,6 @@ const API = {
         return { status: 'error', message: '非 JSON 响应' };
     },
 
-    // ── 系统 ──
-
-    async getSchema() {
-        return this._fetch('/api/schema');
-    },
-
     // ── 导入 ──
 
     async preview(formData) {
@@ -89,6 +83,15 @@ const API = {
         return this._fetch('/api/novels/' + novelId + '/convert/batch', {
             method: 'POST',
             headers: this._headers(),
+            body: JSON.stringify({ chapter_numbers: chapterNumbers }),
+        });
+    },
+
+    /** SSE 流式批量转换：返回 fetch Response，由调用方读取 stream */
+    convertBatchStream(novelId, chapterNumbers) {
+        return fetch('/api/novels/' + novelId + '/convert/batch/stream', {
+            method: 'POST',
+            headers: { ...this._headers() },
             body: JSON.stringify({ chapter_numbers: chapterNumbers }),
         });
     },
@@ -166,6 +169,10 @@ const API = {
             method: 'PUT',
             body: JSON.stringify(data),
         });
+    },
+
+    async deleteChapter(novelId, chapterId) {
+        return this._fetch(`/api/novels/${novelId}/chapters/${chapterId}`, { method: 'DELETE' });
     },
 
     async syncPreview(novelId, file) {

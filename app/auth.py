@@ -9,7 +9,8 @@ import logging
 import smtplib
 from email.mime.text import MIMEText
 from typing import Optional
-from fastapi import Request, HTTPException
+from fastapi import Request
+from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 from app.config import SECRET_KEY, SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD, SMTP_FROM
 from app.database import get_db
@@ -240,11 +241,11 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
         auth = request.headers.get("Authorization", "")
         if not auth.startswith("Bearer "):
-            raise HTTPException(status_code=401, detail="未登录")
+            return JSONResponse({"status": "error", "message": "未登录"}, status_code=401)
 
         user_id = verify_token(auth[7:])
         if user_id is None:
-            raise HTTPException(status_code=401, detail="token 无效或已过期")
+            return JSONResponse({"status": "error", "message": "token 无效或已过期"}, status_code=401)
 
         # 将 user_id 注入 request state 供业务使用
         request.state.user_id = user_id

@@ -195,6 +195,145 @@ async def convert_batch(novel_id: int, request: Request):
     }
 
 
+# ══════════════════════════════════════════════════════════════
+# SSE 流式批量转换 — 并行 + 逐章推送
+# ══════════════════════════════════════════════════════════════
+
+import json as _json
+from fastapi.responses import StreamingResponse
+
+
+def _process_one_chapter(novel_id: int, cn: float, script: dict,
+                         characters: list) -> dict:
+    """在线程中处理单章：检测复用 → 调用 LLM → 入库。返回结果 dict"""
+    chapter_info = novel_repo.get_chapter_info(novel_id, cn)
+    if not chapter_info:
+        return {"chapter_number": cn, "status": "error", "message": "章节不存在"}
+
+    # 检查已有转换结果（跨剧本复用）
+    existing_chapters = script_repo.get_chapter_scenes(novel_id, cn)
+    reused_yaml = None
+    if existing_chapters:
+        for ec in existing_chapters:
+            if ec.get("yaml_content"):
+                reused_yaml = ec["yaml_content"]
+                break
+
+    if reused_yaml:
+        try:
+            reused_data = yaml.safe_load(reused_yaml)
+            reused_scenes = reused_data.get("scenes", []) if isinstance(reused_data, dict) else []
+        except Exception:
+            reused_scenes = []
+        chapter_yaml = reused_yaml
+        sc_count = len(reused_scenes)
+        summary = None
+        logger.info(f"[BatchStream] 复用已有场景: chapter={cn} → {sc_count}场景")
+    else:
+        chapter = {
+            "number": chapter_info["chapter_number"],
+            "title": chapter_info["title"],
+            "content": chapter_info["content"],
+        }
+        context_text = build_chapter_context(novel_id, cn, characters)
+        scenes, summary = convert_chapter(chapter, characters, novel_id, script["id"], context_text)
+
+        if not scenes:
+            return {"chapter_number": cn, "status": "error", "message": "转换失败"}
+
+        chapter_yaml = dump_yaml({
+            "meta": {"source_chapter": cn, "chapter_title": chapter_info["title"]},
+            "scenes": scenes,
+        })
+        sc_count = len(scenes)
+
+    # 入库（每个线程独立 get_db 连接，SQLite WAL 模式安全）
+    script_repo.save_script_chapter(script["id"], novel_id, cn, chapter_yaml, sc_count)
+    if summary:
+        context_repo.save_chapter_context(novel_id, cn, summary=summary)
+
+    return {
+        "type": "chapter",
+        "chapter_number": cn,
+        "status": "ok",
+        "yaml": chapter_yaml,
+        "scenes_count": sc_count,
+        "summary": summary,
+        "reused": reused_yaml is not None,
+    }
+
+
+@router.post("/novels/{novel_id}/convert/batch/stream")
+async def convert_batch_stream(novel_id: int, request: Request):
+    """并行批量转换 + SSE 流式推送（每完成一章即推送给前端）"""
+    req = await request.json()
+    chapter_numbers = req.get("chapter_numbers", [])
+    if not chapter_numbers:
+        return JSONResponse({"status": "error", "message": "缺少 chapter_numbers"}, status_code=400)
+
+    novel = novel_repo.get_novel(novel_id)
+    if not novel:
+        return JSONResponse({"status": "error", "message": "小说不存在"}, status_code=404)
+
+    script = script_repo.get_or_create_draft_script(novel_id, novel.get("title", "（未命名）"))
+    chapters_for_extract = novel_repo.get_chapters_with_content(novel_id)
+    characters = await asyncio.to_thread(extract_characters, chapters_for_extract, novel_id)
+
+    async def event_stream():
+        total = len(chapter_numbers)
+        completed = 0
+        success = 0
+        failed = 0
+
+        # 并发启动所有章节任务
+        tasks = []
+        for cn in chapter_numbers:
+            tasks.append(asyncio.to_thread(
+                _process_one_chapter, novel_id, float(cn), script, characters))
+
+        # 先推送一行注释触发连接
+        yield ":connected\n\n"
+
+        # 逐章推送结果（as_completed 保证谁先完成先推谁）
+        for coro in asyncio.as_completed(tasks):
+            completed += 1
+            try:
+                result = await coro
+            except Exception as e:
+                result = {
+                    "type": "chapter",
+                    "chapter_number": 0,
+                    "status": "error",
+                    "message": str(e),
+                }
+                logger.error(f"[BatchStream] 章节处理异常: {e}")
+
+            if result.get("status") == "ok":
+                success += 1
+            else:
+                failed += 1
+
+            result["progress"] = f"{completed}/{total}"
+            yield f"data: {_json.dumps(result, ensure_ascii=False)}\n\n"
+
+        # 自动合并
+        merge_result = _auto_merge(script["id"], novel_id)
+        yield f"data: {_json.dumps({'type': 'merge', **merge_result}, ensure_ascii=False)}\n\n"
+
+        # 完成
+        generated = script_repo.get_generated_chapter_numbers(novel_id, script["id"])
+        yield f"data: {_json.dumps({'type': 'done', 'total': total, 'success': success, 'failed': failed, 'script_id': script['id'], 'generated_chapters': sorted(generated)}, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
 # ── 单章转换 ──
 
 @router.post("/novels/{novel_id}/convert/{chapter_num}")

@@ -141,17 +141,7 @@ const Auth = {
     },
 
     /** 初始化 landing 页的登录 UI */
-    initLanding() {
-        // 已登录直接跳工具页
-        if (this.loggedIn()) {
-            this.check().then(ok => {
-                if (ok) window.location.href = '/app';
-                else localStorage.removeItem(this.TOKEN_KEY);
-            });
-            return;
-        }
-
-        // "↓ 了解更多" 点击滚动到特性区
+    initLanding() {        // "↓ 了解更多" 点击滚动到特性区
         const scrollHint = document.getElementById('scrollHint');
         if (scrollHint) {
             scrollHint.addEventListener('click', () => {
@@ -285,6 +275,8 @@ const Auth = {
 
         // 点击遮罩关闭
         modal.addEventListener('click', (e) => { if (e.target === modal) hideLogin(); });
+        // 点击 × 关闭
+        document.getElementById('btnCloseAuth').addEventListener('click', hideLogin);
         document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && modal.style.display !== 'none') hideLogin(); });
     },
 

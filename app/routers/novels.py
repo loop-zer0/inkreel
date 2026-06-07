@@ -249,6 +249,15 @@ async def get_chapter_content(novel_id: int, chapter_num: float):
 
 # ── 章节编辑 ──
 
+@router.delete("/novels/{novel_id}/chapters/{chapter_id}")
+async def delete_chapter(novel_id: int, chapter_id: int):
+    """删除小说单章"""
+    nid = novel_repo.delete_chapter(chapter_id)
+    if nid is None:
+        return JSONResponse({"status": "error", "message": "章节不存在"}, status_code=404)
+    return {"status": "ok", "message": "章节已删除", "novel_id": nid}
+
+
 @router.put("/novels/{novel_id}/chapters/{chapter_id}")
 async def update_chapter(novel_id: int, chapter_id: int, req: dict):
     """更新小说章节内容"""
