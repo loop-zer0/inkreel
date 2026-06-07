@@ -191,7 +191,8 @@ acts:         # 四幕结构（开端·建置 → 发展·对抗 → 高潮·转
 
 ## 🎬 Demo 视频
 
-[待上传至 Bilibili / 云盘]
+InkReel — AI 一键把小说变成剧本，开源免费 | loop-zer0  
+UP主：_Z_er_0
 
 ---
 
