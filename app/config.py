@@ -28,32 +28,14 @@ OUTPUT_DIR = os.path.join(_PROJECT_ROOT, "output")
 FRONTEND_DIR = os.path.join(_PROJECT_ROOT, "frontend")
 DOCS_DIR = os.path.join(_PROJECT_ROOT, "docs")
 
-# ── LLM 模式 ──
-LLM_MODE = os.environ.get("NOVEL2SCRIPT_MODE", "online")
-
-# 云端（小米 Mimo，兼容 OpenAI）
-ONLINE_BASE_URL = os.environ.get("INKREEL_BASE_URL", "https://token-plan-cn.xiaomimimo.com/v1")
-ONLINE_API_KEY = os.environ.get("INKREEL_API_KEY", "")
-ONLINE_MODEL = os.environ.get("INKREEL_MODEL", "mimo-v2.5-pro")
-
-# 本地 Ollama
-OLLAMA_BASE_URL = "http://localhost:11434/v1"
-OLLAMA_API_KEY = "ollama"
-OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen2.5:7b")
-
+# ── LLM 配置 ──
 
 def get_llm_config():
-    """返回当前模式的 (base_url, api_key, model)"""
-    if LLM_MODE == "offline":
-        return OLLAMA_BASE_URL, OLLAMA_API_KEY, OLLAMA_MODEL
-    return ONLINE_BASE_URL, ONLINE_API_KEY, ONLINE_MODEL
-
-
-def set_llm_mode(mode: str):
-    """运行时切换 LLM 模式"""
-    global LLM_MODE
-    if mode in ("online", "offline"):
-        LLM_MODE = mode
+    """返回 (base_url, api_key, model)"""
+    base_url = os.environ.get("INKREEL_BASE_URL", "https://token-plan-cn.xiaomimimo.com/v1")
+    api_key = os.environ.get("INKREEL_API_KEY", "")
+    model = os.environ.get("INKREEL_MODEL", "mimo-v2.5-pro")
+    return base_url, api_key, model
 
 
 # ── LLM 参数 ──

@@ -121,10 +121,10 @@ async def quick_convert(file: UploadFile = File(...), title: str = Form(""),
         except (json.JSONDecodeError, TypeError):
             pass
 
-    if len(chapters) < 3:
+    if len(chapters) < 1:
         return JSONResponse({
             "status": "error",
-            "message": f"检测到 {len(chapters)} 个章节，需要至少 3 章",
+            "message": "未检测到有效章节",
         }, status_code=400)
 
     # 2. 导入
@@ -222,10 +222,172 @@ async def get_novel(novel_id: int):
     return {"status": "ok", "novel": novel}
 
 
+@router.put("/novels/{novel_id}")
+async def update_novel_meta(novel_id: int, req: dict):
+    """更新小说元信息"""
+    ok = novel_repo.update_novel(
+        novel_id,
+        title=req.get("title"),
+        author=req.get("author"),
+        genre=req.get("genre"),
+    )
+    if not ok:
+        return JSONResponse({"status": "error", "message": "更新失败"}, status_code=500)
+    return {"status": "ok", "message": "已更新"}
+
+
+# ── 章节内容（含正文）──
+
+@router.get("/novels/{novel_id}/chapters/{chapter_num}/content")
+async def get_chapter_content(novel_id: int, chapter_num: float):
+    """获取单章完整内容（正文 + 元信息），供编辑器使用"""
+    ch = novel_repo.get_chapter_info(novel_id, chapter_num)
+    if not ch:
+        return JSONResponse({"status": "error", "message": "章节不存在"}, status_code=404)
+    return {"status": "ok", "chapter": ch}
+
+
+# ── 章节编辑 ──
+
+@router.put("/novels/{novel_id}/chapters/{chapter_id}")
+async def update_chapter(novel_id: int, chapter_id: int, req: dict):
+    """更新小说章节内容"""
+    ok = novel_repo.update_chapter(
+        chapter_id,
+        title=req.get("title"),
+        content=req.get("content"),
+    )
+    if not ok:
+        return JSONResponse({"status": "error", "message": "更新失败"}, status_code=500)
+    return {"status": "ok", "message": "章节已更新"}
+
+
+@router.post("/novels/{novel_id}/append")
+async def append_chapters(novel_id: int, file: UploadFile = File(...)):
+    """上传文件追加新章节（自动跳过已有章节号）"""
+    novel = novel_repo.get_novel(novel_id)
+    if not novel:
+        return JSONResponse({"status": "error", "message": "小说不存在"}, status_code=404)
+
+    content = await file.read()
+    from app.services.importer import preview_file
+    preview = preview_file(content, file.filename or "untitled.txt")
+    if preview["status"] == "error":
+        return JSONResponse(preview, status_code=400)
+
+    chapters = preview.pop("_chapters")
+    if not chapters:
+        return JSONResponse({"status": "error", "message": "未检测到有效章节"}, status_code=400)
+
+    result = novel_repo.append_chapters(novel_id, chapters)
+    return {
+        "status": "ok",
+        "message": f"已追加 {result['added']} 章，跳过 {result['skipped']} 章（已存在）",
+        "added": result["added"],
+        "skipped": result["skipped"],
+    }
+
+
+# ── 智能章节同步 ──
+
+@router.post("/novels/{novel_id}/sync-preview")
+async def sync_preview(novel_id: int, file: UploadFile = File(...)):
+    """上传文件 → 对比已有章节 → 返回差异报告"""
+    novel = novel_repo.get_novel(novel_id)
+    if not novel:
+        return JSONResponse({"status": "error", "message": "小说不存在"}, status_code=404)
+
+    content = await file.read()
+    from app.services.importer import preview_file
+    preview = preview_file(content, file.filename or "untitled.txt")
+    if preview["status"] == "error":
+        return JSONResponse(preview, status_code=400)
+
+    incoming = preview.pop("_chapters")
+    if not incoming:
+        return JSONResponse({"status": "error", "message": "未检测到有效章节"}, status_code=400)
+
+    # 已有章节（含正文，用于内容比对）
+    existing = novel_repo.get_chapters_with_content(novel_id)
+    existing_map = {}  # chapter_number → chapter
+    for ch in existing:
+        existing_map[ch["chapter_number"]] = ch
+
+    new_chapters = []
+    modified_chapters = []
+    unchanged = 0
+
+    for inc in incoming:
+        cn = inc.get("number", 0)
+        inc_content = inc.get("content", "")
+        old = existing_map.get(cn)
+
+        if old is None:
+            new_chapters.append({
+                "chapter_number": cn,
+                "title": inc.get("title", ""),
+                "char_count": len(inc_content),
+            })
+        elif old.get("content", "").strip() != inc_content.strip():
+            modified_chapters.append({
+                "chapter_number": cn,
+                "title": inc.get("title", ""),
+                "char_count": len(inc_content),
+                "chapter_id": old["id"],
+                "old_char_count": old.get("char_count", 0),
+            })
+        else:
+            unchanged += 1
+
+    # 缓存用于后续 apply
+    router._sync_cache = {
+        "novel_id": novel_id,
+        "incoming": incoming,
+        "new_numbers": {c["chapter_number"] for c in new_chapters},
+        "mod_numbers": {c["chapter_number"] for c in modified_chapters},
+    }
+
+    return {
+        "status": "ok",
+        "filename": file.filename,
+        "total_incoming": len(incoming),
+        "existing": len(existing),
+        "new": new_chapters,
+        "modified": modified_chapters,
+        "unchanged": unchanged,
+    }
+
+
+@router.post("/novels/{novel_id}/sync-apply")
+async def sync_apply(novel_id: int, req: dict):
+    """应用同步操作"""
+    cache = getattr(router, '_sync_cache', {})
+    if not cache or cache.get("novel_id") != novel_id:
+        return JSONResponse({"status": "error", "message": "请先执行 sync-preview"}, status_code=400)
+
+    incoming = cache["incoming"]
+    add_numbers = set(req.get("add", []))
+    update_numbers = set(req.get("update", []))
+
+    to_add = [c for c in incoming if c.get("number", 0) in add_numbers]
+    to_update = [c for c in incoming if c.get("number", 0) in update_numbers]
+
+    added = novel_repo.bulk_add_chapters(novel_id, to_add) if to_add else 0
+    updated = novel_repo.bulk_update_chapters(novel_id, to_update) if to_update else 0
+
+    router._sync_cache = {}
+    return {"status": "ok", "added": added, "updated": updated}
+
+
+router._sync_cache = {}
+
+
 @router.delete("/novels/{novel_id}")
 async def delete_novel(novel_id: int):
     """删除小说及关联数据"""
     ok = novel_repo.delete_novel(novel_id)
+    if ok is None:
+        return JSONResponse({"status": "error", "message": "小说不存在"}, status_code=404)
     if not ok:
         return JSONResponse({"status": "error", "message": "删除失败"}, status_code=500)
     return {"status": "ok", "message": "已删除"}

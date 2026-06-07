@@ -227,11 +227,9 @@ class AuthMiddleware(BaseHTTPMiddleware):
     SKIP_PATHS = {
         "/api/auth/login",
         "/api/auth/register",
-        "/api/auth/send-code",
         "/api/auth/reset-password",
         "/api/auth/check",
         "/api/health",
-        "/api/mode",
     }
 
     async def dispatch(self, request: Request, call_next):

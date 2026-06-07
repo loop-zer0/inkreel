@@ -121,16 +121,48 @@ def get_novel(novel_id: int) -> Optional[dict]:
 
 
 def delete_novel(novel_id: int) -> bool:
-    """删除小说及关联数据"""
+    """删除小说及关联数据；不存在返回 None 表示 404"""
     db = get_db()
     try:
-        db.execute("DELETE FROM novels WHERE id = ?", (novel_id,))
+        cur = db.execute("DELETE FROM novels WHERE id = ?", (novel_id,))
+        if cur.rowcount == 0:
+            return None  # 资源不存在
         db.commit()
         logger.info(f"[NovelRepo] 小说已删除: id={novel_id}")
         return True
     except Exception as e:
         db.rollback()
         logger.error(f"[NovelRepo] 删除小说失败: {e}")
+        return False
+    finally:
+        db.close()
+
+
+def update_novel(novel_id: int, title: str = None, author: str = None, genre: str = None) -> bool:
+    """更新小说元信息"""
+    db = get_db()
+    try:
+        fields = []
+        values = []
+        if title is not None:
+            fields.append("title = ?")
+            values.append(title)
+        if author is not None:
+            fields.append("author = ?")
+            values.append(author)
+        if genre is not None:
+            fields.append("genre = ?")
+            values.append(genre)
+        if not fields:
+            return False
+        fields.append("updated_at = datetime('now','localtime')")
+        values.append(novel_id)
+        db.execute(f"UPDATE novels SET {', '.join(fields)} WHERE id = ?", values)
+        db.commit()
+        return True
+    except Exception as e:
+        db.rollback()
+        logger.error(f"[NovelRepo] 更新小说失败: {e}")
         return False
     finally:
         db.close()
@@ -152,7 +184,7 @@ def touch_novel(novel_id: int):
 # ── Chapter ──
 
 def get_chapter_info(novel_id: int, chapter_number: float) -> Optional[dict]:
-    """获取单章元信息"""
+    """获取单章元信息（含内容）"""
     db = get_db()
     try:
         row = db.execute(
@@ -160,5 +192,169 @@ def get_chapter_info(novel_id: int, chapter_number: float) -> Optional[dict]:
             (novel_id, chapter_number),
         ).fetchone()
         return dict(row) if row else None
+    finally:
+        db.close()
+
+
+def get_chapter_by_id(chapter_id: int) -> Optional[dict]:
+    """按 ID 获取章节"""
+    db = get_db()
+    try:
+        row = db.execute("SELECT * FROM novel_chapters WHERE id = ?", (chapter_id,)).fetchone()
+        return dict(row) if row else None
+    finally:
+        db.close()
+
+
+def get_chapters_with_content(novel_id: int) -> List[dict]:
+    """获取小说的所有章节（含正文），供人物提取使用"""
+    db = get_db()
+    try:
+        rows = db.execute(
+            "SELECT * FROM novel_chapters WHERE novel_id = ? ORDER BY sort_order",
+            (novel_id,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        db.close()
+
+
+def update_chapter(chapter_id: int, title: str = None, content: str = None) -> bool:
+    """更新章节标题和/或内容"""
+    if title is None and content is None:
+        return False
+    db = get_db()
+    try:
+        sets = []
+        params = []
+        if title is not None:
+            sets.append("title = ?")
+            params.append(title)
+        if content is not None:
+            sets.append("content = ?")
+            params.append(content)
+            sets.append("char_count = ?")
+            params.append(len(content))
+        params.append(chapter_id)
+        db.execute(f"UPDATE novel_chapters SET {', '.join(sets)} WHERE id = ?", params)
+        db.commit()
+        # 更新小说的 updated_at
+        row = db.execute("SELECT novel_id FROM novel_chapters WHERE id = ?", (chapter_id,)).fetchone()
+        if row:
+            db.execute("UPDATE novels SET updated_at = datetime('now','localtime') WHERE id = ?", (row["novel_id"],))
+            db.commit()
+        return True
+    except Exception as e:
+        db.rollback()
+        return False
+    finally:
+        db.close()
+
+
+def append_chapters(novel_id: int, chapters: List[dict]) -> dict:
+    """追加新章节。跳过已存在的章节号，返回 {added: int, skipped: int}"""
+    db = get_db()
+    try:
+        # 获取已有章节号
+        existing = {
+            r["chapter_number"]
+            for r in db.execute(
+                "SELECT chapter_number FROM novel_chapters WHERE novel_id = ?", (novel_id,)
+            ).fetchall()
+        }
+        # 获取当前最大 sort_order
+        max_sort = db.execute(
+            "SELECT COALESCE(MAX(sort_order), -1) + 1 AS n FROM novel_chapters WHERE novel_id = ?",
+            (novel_id,),
+        ).fetchone()["n"]
+
+        added = 0
+        skipped = 0
+        for ch in chapters:
+            cn = ch.get("number", ch.get("num", 0))
+            if cn in existing:
+                skipped += 1
+                continue
+            db.execute(
+                """INSERT INTO novel_chapters (novel_id, chapter_number, sort_order, title, content, char_count)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                (novel_id, cn, max_sort + added, ch.get("title", ""), ch.get("content", ""), len(ch.get("content", ""))),
+            )
+            added += 1
+
+        if added > 0:
+            db.execute(
+                "UPDATE novels SET chapter_count = chapter_count + ?, updated_at = datetime('now','localtime') WHERE id = ?",
+                (added, novel_id),
+            )
+        db.commit()
+        logger.info(f"[NovelRepo] 追加章节: novel={novel_id}, +{added}, 跳过{skipped}")
+        return {"added": added, "skipped": skipped}
+    except Exception as e:
+        db.rollback()
+        raise
+    finally:
+        db.close()
+
+
+def bulk_add_chapters(novel_id: int, chapters: List[dict]) -> int:
+    """批量插入新章节（不做去重，调用方已筛选）。返回插入数量"""
+    db = get_db()
+    try:
+        max_sort = db.execute(
+            "SELECT COALESCE(MAX(sort_order), -1) + 1 AS n FROM novel_chapters WHERE novel_id = ?",
+            (novel_id,),
+        ).fetchone()["n"]
+
+        added = 0
+        for ch in chapters:
+            cn = ch.get("chapter_number", ch.get("number", 0))
+            db.execute(
+                """INSERT INTO novel_chapters (novel_id, chapter_number, sort_order, title, content, char_count)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                (novel_id, cn, max_sort + added, ch.get("title", ""), ch.get("content", ""), len(ch.get("content", ""))),
+            )
+            added += 1
+
+        if added > 0:
+            db.execute(
+                "UPDATE novels SET chapter_count = chapter_count + ?, updated_at = datetime('now','localtime') WHERE id = ?",
+                (added, novel_id),
+            )
+        db.commit()
+        return added
+    except Exception as e:
+        db.rollback()
+        raise
+    finally:
+        db.close()
+
+
+def bulk_update_chapters(novel_id: int, chapters: List[dict]) -> int:
+    """批量更新已有章节的内容（按 novel_id + chapter_number 匹配）。返回更新数量"""
+    db = get_db()
+    try:
+        updated = 0
+        for ch in chapters:
+            cn = ch.get("chapter_number", ch.get("number", 0))
+            content = ch.get("content", "")
+            title = ch.get("title")
+            cur = db.execute(
+                """UPDATE novel_chapters SET content = ?, char_count = ?"""
+                + (", title = ?" if title else "") +
+                """ WHERE novel_id = ? AND chapter_number = ?""",
+                [content, len(content)] + ([title] if title else []) + [novel_id, cn],
+            )
+            updated += cur.rowcount
+        if updated > 0:
+            db.execute(
+                "UPDATE novels SET updated_at = datetime('now','localtime') WHERE id = ?",
+                (novel_id,),
+            )
+        db.commit()
+        return updated
+    except Exception as e:
+        db.rollback()
+        raise
     finally:
         db.close()

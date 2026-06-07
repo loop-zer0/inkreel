@@ -7,7 +7,7 @@
 import logging
 import yaml
 from typing import List, Tuple
-from app.config import (LLM_TEMPERATURE, LLM_MODE, LLM_MAX_TOKENS,
+from app.config import (LLM_TEMPERATURE, LLM_MAX_TOKENS,
                         CHAPTER_SEGMENT_SIZE)
 from app.schemas.prompts import CONVERTER_SYSTEM_PROMPT, CONTEXT_CONVERTER_PROMPT
 from app.services.llm import get_client, get_model
@@ -71,7 +71,7 @@ def convert_chapter(chapter: dict, characters: List[dict],
     Returns:
         (scenes_list, chapter_summary)
     """
-    if LLM_MODE == "online" and not _has_api_key():
+    if not _has_api_key():
         logger.error("[Converter] 未配置 API Key")
         return [], ""
 

@@ -4,9 +4,7 @@ echo ===================================
 echo   InkReel - AI Novel to Script Tool
 echo ===================================
 echo.
-echo   Online:  Mimo API (default)
-echo   Offline: Ollama local model
-echo   Switch:  click toggle in web UI
+echo   API:  Mimo LLM
 echo.
 echo   Open http://localhost:8766
 echo ===================================
