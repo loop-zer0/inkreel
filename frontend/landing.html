@@ -5,210 +5,846 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>InkReel — AI 小说转剧本</title>
     <link rel="icon" type="image/svg+xml" href="/favicon.ico">
-    <link rel="stylesheet" href="/static/css/landing.css">
+    <style>
+        :root {
+            --bg: #fafaf8;
+            --surface: #f3f2ef;
+            --border: #e2e0da;
+            --text: #1a1a18;
+            --text2: #6b6862;
+            --text3: #9a9790;
+            --accent: #5b7a6e;
+            --accent-dim: rgba(91,122,110,0.08);
+            --accent-glow: rgba(91,122,110,0.18);
+            --font: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: var(--font);
+            background: var(--bg);
+            color: var(--text);
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+            overflow-x: hidden;
+        }
+
+        /* ── Canvas 层 ── */
+        #particleCanvas {
+            position: fixed;
+            inset: 0;
+            z-index: 0;
+            pointer-events: none;
+        }
+        #threeCanvas {
+            position: fixed;
+            inset: 0;
+            z-index: 0;
+            pointer-events: none;
+        }
+
+        /* ── 导航 ── */
+        .nav {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 10;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 16px 32px;
+            background: rgba(250,250,248,0.78);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border-bottom: 1px solid var(--border);
+        }
+        .nav-brand {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            text-decoration: none;
+            color: var(--text);
+        }
+        .nav-logo {
+            font-size: 18px;
+            font-weight: 700;
+            letter-spacing: -0.02em;
+        }
+        .nav-dot {
+            color: var(--accent);
+            font-weight: 700;
+            font-size: 22px;
+            line-height: 1;
+        }
+        .nav-sub {
+            font-size: 14px;
+            color: var(--text2);
+        }
+        .nav-cta {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 10px 22px;
+            background: var(--text);
+            color: #fff;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            text-decoration: none;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        .nav-cta:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 20px rgba(0,0,0,0.12);
+        }
+
+        /* ── Hero ── */
+        .hero {
+            position: relative;
+            z-index: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+            padding: 180px 24px 100px;
+            max-width: 720px;
+            margin: 0 auto;
+        }
+        .hero-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 7px 18px;
+            background: var(--accent-dim);
+            border: 1px solid rgba(91,122,110,0.15);
+            border-radius: 20px;
+            font-size: 13px;
+            color: var(--accent);
+            margin-bottom: 28px;
+            backdrop-filter: blur(6px);
+            -webkit-backdrop-filter: blur(6px);
+        }
+        .hero-badge-dot {
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: var(--accent);
+            animation: pulse 2s ease-in-out infinite;
+            box-shadow: 0 0 8px rgba(91,122,110,0.5);
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.3; transform: scale(1.6); }
+        }
+        .hero h1 {
+            font-size: 52px;
+            font-weight: 800;
+            letter-spacing: -0.03em;
+            line-height: 1.15;
+            margin-bottom: 20px;
+        }
+        .hero h1 em {
+            font-style: normal;
+            color: var(--accent);
+            position: relative;
+        }
+        .hero h1 em::after {
+            content: '';
+            position: absolute;
+            left: 0;
+            bottom: 2px;
+            width: 100%;
+            height: 6px;
+            background: rgba(91,122,110,0.15);
+            border-radius: 3px;
+            z-index: -1;
+        }
+        .hero p {
+            font-size: 18px;
+            color: var(--text2);
+            line-height: 1.7;
+            max-width: 500px;
+            margin-bottom: 40px;
+        }
+        .hero-actions {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+        .btn-primary {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 15px 34px;
+            background: var(--text);
+            color: #fff;
+            border: none;
+            border-radius: 10px;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            text-decoration: none;
+            transition: transform 0.2s, box-shadow 0.2s;
+            position: relative;
+            overflow: hidden;
+        }
+        .btn-primary::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(135deg, rgba(91,122,110,0.4), transparent 60%);
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+        .btn-primary:hover::before { opacity: 1; }
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 30px rgba(0,0,0,0.14);
+        }
+        .btn-secondary {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 15px 34px;
+            background: rgba(255,255,255,0.5);
+            backdrop-filter: blur(6px);
+            -webkit-backdrop-filter: blur(6px);
+            color: var(--text);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            text-decoration: none;
+            transition: border-color 0.2s, background 0.2s, transform 0.2s;
+        }
+        .btn-secondary:hover {
+            border-color: var(--accent);
+            background: var(--accent-dim);
+            transform: translateY(-2px);
+        }
+
+        /* ── 特性 ── */
+        .features {
+            position: relative;
+            z-index: 1;
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 20px;
+            max-width: 920px;
+            margin: 0 auto;
+            padding: 40px 24px 80px;
+        }
+        .feature-card {
+            padding: 32px 26px;
+            background: rgba(255,255,255,0.55);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            transition: transform 0.25s, border-color 0.25s, box-shadow 0.25s;
+            cursor: default;
+        }
+        .feature-card:hover {
+            transform: translateY(-4px);
+            border-color: rgba(91,122,110,0.35);
+            box-shadow: 0 8px 30px rgba(0,0,0,0.06);
+        }
+        .feature-icon {
+            font-size: 32px;
+            margin-bottom: 16px;
+            display: block;
+            transition: transform 0.25s;
+        }
+        .feature-card:hover .feature-icon {
+            transform: scale(1.15);
+        }
+        .feature-card h3 {
+            font-size: 16px;
+            font-weight: 700;
+            margin-bottom: 8px;
+        }
+        .feature-card p {
+            font-size: 14px;
+            color: var(--text2);
+            line-height: 1.7;
+        }
+
+        /* ── 工作流 ── */
+        .workflow {
+            position: relative;
+            z-index: 1;
+            max-width: 780px;
+            margin: 0 auto;
+            padding: 40px 24px 100px;
+            text-align: center;
+        }
+        .section-label {
+            font-size: 12px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: var(--accent);
+            margin-bottom: 12px;
+        }
+        .section-title {
+            font-size: 34px;
+            font-weight: 800;
+            letter-spacing: -0.02em;
+            margin-bottom: 56px;
+        }
+        .steps {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 10px;
+        }
+        .step {
+            position: relative;
+            padding: 28px 16px;
+            background: rgba(255,255,255,0.45);
+            backdrop-filter: blur(6px);
+            -webkit-backdrop-filter: blur(6px);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            transition: transform 0.25s, border-color 0.25s, box-shadow 0.25s;
+        }
+        .step:hover {
+            transform: translateY(-3px);
+            border-color: rgba(91,122,110,0.3);
+            box-shadow: 0 6px 22px rgba(0,0,0,0.05);
+        }
+        .step-num {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: var(--accent-dim);
+            color: var(--accent);
+            font-weight: 800;
+            font-size: 17px;
+            margin-bottom: 16px;
+            transition: background 0.25s, box-shadow 0.25s;
+        }
+        .step:hover .step-num {
+            background: rgba(91,122,110,0.18);
+            box-shadow: 0 0 20px rgba(91,122,110,0.15);
+        }
+        .step h4 {
+            font-size: 15px;
+            font-weight: 700;
+            margin-bottom: 6px;
+        }
+        .step p {
+            font-size: 13px;
+            color: var(--text2);
+            line-height: 1.6;
+        }
+        .step-arrow {
+            position: absolute;
+            right: -8px;
+            top: 42px;
+            color: var(--border);
+            font-size: 22px;
+            pointer-events: none;
+            z-index: 2;
+        }
+        .step:last-child .step-arrow { display: none; }
+
+        /* ── Footer ── */
+        .footer {
+            position: relative;
+            z-index: 1;
+            text-align: center;
+            padding: 40px 24px;
+            border-top: 1px solid var(--border);
+            color: var(--text3);
+            font-size: 13px;
+        }
+        .footer a {
+            color: var(--accent);
+            text-decoration: none;
+        }
+        .footer a:hover { text-decoration: underline; }
+
+        /* ── 滚动渐现 ── */
+        .reveal {
+            opacity: 0;
+            transform: translateY(30px);
+            transition: opacity 0.7s ease, transform 0.7s ease;
+        }
+        .reveal.visible {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        /* ── 响应式 ── */
+        @media (max-width: 768px) {
+            .hero { padding: 130px 20px 60px; }
+            .hero h1 { font-size: 34px; }
+            .hero p { font-size: 16px; }
+            .features { grid-template-columns: 1fr; }
+            .steps { grid-template-columns: repeat(2, 1fr); }
+            .step-arrow { display: none; }
+        }
+    </style>
 </head>
 <body>
-    <!-- 粒子背景 -->
+    <!-- 2D 粒子层 -->
     <canvas id="particleCanvas"></canvas>
+    <!-- 3D 几何体层 -->
+    <canvas id="threeCanvas"></canvas>
 
     <!-- 导航 -->
     <nav class="nav">
-        <span class="nav-logo">InkReel <span class="nav-logo-dot">·</span> <span class="nav-logo-sub">小说转剧本</span></span>
-        <button class="nav-btn" id="btnNavLogin">登录</button>
+        <a href="/" class="nav-brand">
+            <span class="nav-logo">InkReel</span>
+            <span class="nav-dot">·</span>
+            <span class="nav-sub">小说转剧本</span>
+        </a>
+        <a href="/app" class="nav-cta">开始使用 →</a>
     </nav>
 
     <!-- Hero -->
     <section class="hero">
-        <div class="hero-badge">AI 驱动的剧本创作工具</div>
-        <h1 class="hero-title">把小说变成<span class="hero-highlight">剧本</span></h1>
-        <p class="hero-desc">
-            上传你的小说，AI 自动识别人物、逐章转换为结构化场景、<br>
-            智能合并去重，输出专业级 YAML 剧本。
+        <div class="hero-badge reveal">
+            <span class="hero-badge-dot"></span>
+            AI 驱动 · 云端赋能
+        </div>
+        <h1 class="reveal">把小说变成<em>剧本</em><br>只需一次点击</h1>
+        <p class="reveal">
+            InkReel 用大语言模型将你的小说自动转换为标准剧本格式，
+            逐章生成、可控可编辑、多语言翻译、无限合并。
         </p>
-        <div class="hero-actions">
-            <button class="hero-btn-primary" id="btnHeroStart">开始使用</button>
+        <div class="hero-actions reveal">
+            <a href="/app" class="btn-primary">开始使用 →</a>
+            <a href="#features" class="btn-secondary">了解更多 ↓</a>
         </div>
-        <div class="hero-formats">
-            支持 .txt &nbsp; .md &nbsp; .docx &nbsp; .epub
-        </div>
-        <div class="hero-scroll" id="scrollHint" style="cursor:pointer">↓ 了解更多</div>
     </section>
 
     <!-- 特性 -->
     <section class="features" id="features">
-        <h2 class="section-title">核心能力</h2>
-        <div class="feature-grid">
-            <div class="feature-card">
-                <div class="feature-icon">🧠</div>
-                <h3>AI 角色识别</h3>
-                <p>自动提取小说人物，识别姓名、性别、角色定位，构建完整人物关系图谱</p>
-            </div>
-            <div class="feature-card">
-                <div class="feature-icon">🎬</div>
-                <h3>逐章场景转换</h3>
-                <p>智能分析叙事文本，拆解为结构化场景——地点、对白、动作、情绪一步到位</p>
-            </div>
-            <div class="feature-card">
-                <div class="feature-icon">🧩</div>
-                <h3>智能合并分幕</h3>
-                <p>自动去重人物、统一编号、按章节排序，推断四幕结构（开端·发展·高潮·结局）</p>
-            </div>
-            <div class="feature-card">
-                <div class="feature-icon">📝</div>
-                <h3>YAML 标准输出</h3>
-                <p>符合行业规范的剧本格式，可直接导入各类编剧工具，支持在线编辑和导出</p>
-            </div>
+        <div class="feature-card reveal">
+            <span class="feature-icon">📖</span>
+            <h3>多格式导入</h3>
+            <p>支持 .txt / .md / .docx / .epub，自动识别章节结构，拖入即导入。</p>
+        </div>
+        <div class="feature-card reveal">
+            <span class="feature-icon">🎬</span>
+            <h3>标准剧本输出</h3>
+            <p>生成 YAML 格式标准剧本，包含场景头、对白、动作描述，可下载编辑。</p>
+        </div>
+        <div class="feature-card reveal">
+            <span class="feature-icon">🧩</span>
+            <h3>自由合并章节</h3>
+            <p>按需选择章节合并为独立剧本，支持增删改查，创建多版本改编。</p>
+        </div>
+        <div class="feature-card reveal">
+            <span class="feature-icon">✂️</span>
+            <h3>逐章精细控制</h3>
+            <p>选择任意章节独立转换，支持上下文注入保持角色和情节连贯。</p>
+        </div>
+        <div class="feature-card reveal">
+            <span class="feature-icon">🌐</span>
+            <h3>多语言翻译</h3>
+            <p>一键翻译剧本，支持中↔英/日/韩/法/德/西，保留 YAML 结构。</p>
+        </div>
+        <div class="feature-card reveal">
+            <span class="feature-icon">📎</span>
+            <h3>智能章节同步</h3>
+            <p>小说更新后自动对比差异，新增/修改章节一目了然，同步处理。</p>
         </div>
     </section>
 
     <!-- 工作流 -->
     <section class="workflow">
-        <h2 class="section-title">三步完成</h2>
+        <div class="section-label reveal">工作流</div>
+        <h2 class="section-title reveal">四步完成小说到剧本</h2>
         <div class="steps">
-            <div class="step">
+            <div class="step reveal">
                 <div class="step-num">1</div>
-                <h3>上传小说</h3>
-                <p>拖入 .txt / .md / .docx / .epub 文件<br>自动分章、检测体裁</p>
+                <h4>导入小说</h4>
+                <p>拖入文件，自动识别章节和元数据</p>
+                <span class="step-arrow">→</span>
             </div>
-            <div class="step-arrow">→</div>
-            <div class="step">
+            <div class="step reveal">
                 <div class="step-num">2</div>
-                <h3>AI 逐章转换</h3>
-                <p>选择章节点击转换<br>也可批量一键处理</p>
+                <h4>选择章节</h4>
+                <p>勾选需要转换的章节，按序生成</p>
+                <span class="step-arrow">→</span>
             </div>
-            <div class="step-arrow">→</div>
-            <div class="step">
+            <div class="step reveal">
                 <div class="step-num">3</div>
-                <h3>合并导出剧本</h3>
-                <p>自动合并为完整剧本<br>下载 YAML 或在线编辑</p>
+                <h4>AI 转换</h4>
+                <p>LLM 自动识别场景、角色与对白</p>
+                <span class="step-arrow">→</span>
+            </div>
+            <div class="step reveal">
+                <div class="step-num">4</div>
+                <h4>导出剧本</h4>
+                <p>YAML 格式输出，可编辑、下载</p>
             </div>
         </div>
-    </section>
-
-    <!-- CTA -->
-    <section class="cta">
-        <h2>准备好把你的故事搬上荧幕了吗？</h2>
-        <p>免费使用，本地数据安全，支持云端 / 离线双模式</p>
-        <button class="hero-btn-primary" id="btnCtaStart">立即开始</button>
     </section>
 
     <!-- Footer -->
     <footer class="footer">
-        <p>InkReel · AI 小说转剧本工具</p>
-        <p class="footer-sub">本地运行 · 数据安全 · 开源免费</p>
+        <p>InkReel — AI 小说转剧本工具 · <a href="https://github.com/loop-zer0/hearsay">GitHub</a></p>
     </footer>
 
-    <!-- 登录弹窗 -->
-    <div class="modal-overlay" id="loginModal" style="display:none">
-        <div class="modal-box">
-            <div class="modal-tabs">
-                <button class="modal-tab active" data-tab="login">登录</button>
-                <button class="modal-tab" data-tab="register">注册</button>
-                <button class="modal-tab" data-tab="reset">找回密码</button>
-            </div>
-
-            <!-- 登录 -->
-            <div class="modal-panel" id="panelLogin">
-                <div class="modal-body">
-                    <label class="modal-label">邮箱 / 手机号</label>
-                    <input type="text" id="loginAccount" class="modal-input" placeholder="请输入邮箱或手机号">
-                    <label class="modal-label" style="margin-top:12px">密码</label>
-                    <input type="password" id="loginPassword" class="modal-input" placeholder="请输入密码">
-                    <p class="modal-error" id="loginError" style="display:none"></p>
-                </div>
-                <div class="modal-actions">
-                    <button class="hero-btn-primary" id="btnLogin" style="width:100%;margin:0;padding:10px 0;font-size:14px">登录</button>
-                </div>
-            </div>
-
-            <!-- 注册 -->
-            <div class="modal-panel" id="panelRegister" style="display:none">
-                <div class="modal-body">
-                    <label class="modal-label">邮箱</label>
-                    <input type="email" id="regEmail" class="modal-input" placeholder="请输入邮箱（选填）">
-                    <label class="modal-label" style="margin-top:12px">手机号</label>
-                    <input type="text" id="regPhone" class="modal-input" placeholder="请输入手机号（选填）">
-                    <label class="modal-label" style="margin-top:12px">密码</label>
-                    <input type="password" id="regPassword" class="modal-input" placeholder="至少 4 位密码">
-                    <label class="modal-label" style="margin-top:12px">确认密码</label>
-                    <input type="password" id="regPassword2" class="modal-input" placeholder="再次输入密码">
-                    <label class="modal-label" style="margin-top:12px">验证码</label>
-                    <div class="code-row">
-                        <input type="text" id="regCode" class="modal-input" placeholder="6 位验证码" maxlength="6" style="flex:1">
-                        <button class="btn-code" id="btnSendRegCode">发送验证码</button>
-                    </div>
-                    <p class="modal-error" id="regError" style="display:none"></p>
-                    <p class="modal-success" id="regCodeHint" style="display:none"></p>
-                </div>
-                <div class="modal-actions">
-                    <button class="hero-btn-primary" id="btnRegister" style="width:100%;margin:0;padding:10px 0;font-size:14px">注册</button>
-                </div>
-            </div>
-
-            <!-- 找回密码 -->
-            <div class="modal-panel" id="panelReset" style="display:none">
-                <div class="modal-body">
-                    <label class="modal-label">邮箱 / 手机号</label>
-                    <input type="text" id="resetAccount" class="modal-input" placeholder="请输入注册时的邮箱或手机号">
-                    <label class="modal-label" style="margin-top:12px">验证码</label>
-                    <div class="code-row">
-                        <input type="text" id="resetCode" class="modal-input" placeholder="6 位验证码" maxlength="6" style="flex:1">
-                        <button class="btn-code" id="btnSendResetCode">发送验证码</button>
-                    </div>
-                    <p class="modal-error" id="resetError" style="display:none"></p>
-                    <p class="modal-success" id="resetSuccess" style="display:none"></p>
-                </div>
-                <div class="modal-actions">
-                    <button class="hero-btn-primary" id="btnReset" style="width:100%;margin:0;padding:10px 0;font-size:14px">重置密码</button>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- 粒子（轻量版：仅 18 个，无鼠标互动，避免滚动卡顿）-->
+    <!-- ================================================================
+         2D 粒子系统 — 神经网络风格：连线 + 光晕 + 多色 + 强鼠标交互
+         ================================================================ -->
     <script>
     (function() {
         const canvas = document.getElementById('particleCanvas');
         const ctx = canvas.getContext('2d');
-        let particles = [], w, h;
+        let particles = [];
+        let w, h;
+        let mouseX = -200, mouseY = -200;
+        let mouseActive = false;
 
-        function resize() { w = canvas.width = window.innerWidth; h = canvas.height = window.innerHeight; }
-        resize(); window.addEventListener('resize', resize);
+        function resize() {
+            w = canvas.width = window.innerWidth;
+            h = canvas.height = window.innerHeight;
+        }
+        resize();
+        window.addEventListener('resize', resize);
 
-        const COUNT = 18;
+        const COUNT = Math.min(140, Math.floor((w * h) / 8000));
+
+        // 色板：绿 → 青 → 暖金
+        const palette = [
+            [91, 122, 110],
+            [72, 148, 130],
+            [130, 160, 120],
+            [160, 150, 110],
+            [100, 140, 125],
+        ];
+
         for (let i = 0; i < COUNT; i++) {
+            const color = palette[Math.floor(Math.random() * palette.length)];
             particles.push({
-                x: Math.random() * w, y: Math.random() * h,
-                r: Math.random() * 1.6 + 0.5,
-                vx: (Math.random() - 0.5) * 0.08,
-                vy: (Math.random() - 0.5) * 0.08 - 0.02,
-                opacity: Math.random() * 0.16 + 0.04,
+                x: Math.random() * w,
+                y: Math.random() * h,
+                r: Math.random() * 2.2 + 0.6,
+                vx: (Math.random() - 0.5) * 0.25,
+                vy: (Math.random() - 0.5) * 0.25 - 0.06,
+                opacity: Math.random() * 0.35 + 0.08,
+                color: color,
+                phase: Math.random() * Math.PI * 2,
+                freq: Math.random() * 0.008 + 0.003,
             });
         }
 
-        // 隔帧绘制，降低滚动时的 GPU 压力
-        let skip = 0;
+        let frame = 0;
         function draw() {
-            skip = (skip + 1) % 3;
-            if (skip === 0) {
-                ctx.clearRect(0, 0, w, h);
-                for (const p of particles) {
-                    p.x += p.vx; p.y += p.vy;
-                    if (p.x < -10) p.x = w + 10; if (p.x > w + 10) p.x = -10;
-                    if (p.y < -10) p.y = h + 10; if (p.y > h + 10) p.y = -10;
-                    ctx.beginPath();
-                    ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
-                    ctx.fillStyle = `rgba(91,122,110,${p.opacity})`;
-                    ctx.fill();
+            frame++;
+            ctx.clearRect(0, 0, w, h);
+
+            // 更新 & 绘制粒子
+            for (const p of particles) {
+                p.x += p.vx;
+                p.y += p.vy;
+
+                if (p.x < -20) p.x = w + 20;
+                if (p.x > w + 20) p.x = -20;
+                if (p.y < -20) p.y = h + 20;
+                if (p.y > h + 20) p.y = -20;
+
+                const flicker = Math.sin(frame * p.freq + p.phase) * 0.3 + 0.7;
+                const [cr, cg, cb] = p.color;
+
+                // 光晕
+                const glow = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.r * 3.5);
+                glow.addColorStop(0, `rgba(${cr},${cg},${cb},${p.opacity * flicker * 0.9})`);
+                glow.addColorStop(0.5, `rgba(${cr},${cg},${cb},${p.opacity * flicker * 0.25})`);
+                glow.addColorStop(1, `rgba(${cr},${cg},${cb},0)`);
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, p.r * 3.5, 0, Math.PI * 2);
+                ctx.fillStyle = glow;
+                ctx.fill();
+
+                // 核心
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+                ctx.fillStyle = `rgba(${cr},${cg},${cb},${p.opacity * flicker * 1.1})`;
+                ctx.fill();
+            }
+
+            // 连线
+            const maxDist = 110;
+            for (let i = 0; i < particles.length; i++) {
+                for (let j = i + 1; j < particles.length; j++) {
+                    const dx = particles[i].x - particles[j].x;
+                    const dy = particles[i].y - particles[j].y;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    if (dist < maxDist) {
+                        const alpha = (1 - dist / maxDist) * 0.13;
+                        const midColor = [
+                            Math.round((particles[i].color[0] + particles[j].color[0]) / 2),
+                            Math.round((particles[i].color[1] + particles[j].color[1]) / 2),
+                            Math.round((particles[i].color[2] + particles[j].color[2]) / 2),
+                        ];
+                        ctx.beginPath();
+                        ctx.moveTo(particles[i].x, particles[i].y);
+                        ctx.lineTo(particles[j].x, particles[j].y);
+                        ctx.strokeStyle = `rgba(${midColor[0]},${midColor[1]},${midColor[2]},${alpha})`;
+                        ctx.lineWidth = 0.6;
+                        ctx.stroke();
+                    }
                 }
             }
+
+            // 鼠标交互
+            if (mouseActive) {
+                for (const p of particles) {
+                    const dx = mouseX - p.x;
+                    const dy = mouseY - p.y;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    if (dist < 150 && dist > 2) {
+                        const force = 0.04 / (dist * 0.03);
+                        p.vx += dx * force;
+                        p.vy += dy * force;
+                    }
+                    if (dist < 200 && dist > 40) {
+                        const tangentForce = 0.008;
+                        p.vx += -dy / dist * tangentForce;
+                        p.vy += dx / dist * tangentForce;
+                    }
+                }
+
+                // 鼠标光晕
+                const mouseGlow = ctx.createRadialGradient(mouseX, mouseY, 0, mouseX, mouseY, 100);
+                mouseGlow.addColorStop(0, 'rgba(91,122,110,0.08)');
+                mouseGlow.addColorStop(1, 'rgba(91,122,110,0)');
+                ctx.beginPath();
+                ctx.arc(mouseX, mouseY, 100, 0, Math.PI * 2);
+                ctx.fillStyle = mouseGlow;
+                ctx.fill();
+            }
+
+            // 阻尼 + 限速
+            for (const p of particles) {
+                p.vx *= 0.998;
+                p.vy *= 0.998;
+                const speed = Math.sqrt(p.vx * p.vx + p.vy * p.vy);
+                if (speed > 0.5) {
+                    p.vx = (p.vx / speed) * 0.5;
+                    p.vy = (p.vy / speed) * 0.5;
+                }
+            }
+
             requestAnimationFrame(draw);
         }
         draw();
+
+        window.addEventListener('mousemove', e => {
+            mouseX = e.clientX;
+            mouseY = e.clientY;
+            mouseActive = true;
+        });
+        window.addEventListener('mouseleave', () => { mouseActive = false; });
+        window.addEventListener('touchmove', e => {
+            mouseX = e.touches[0].clientX;
+            mouseY = e.touches[0].clientY;
+            mouseActive = true;
+        }, { passive: true });
+        window.addEventListener('touchend', () => { mouseActive = false; });
+
+        window.addEventListener('resize', () => {
+            const newCount = Math.min(140, Math.floor((w * h) / 8000));
+            while (particles.length < newCount) {
+                const color = palette[Math.floor(Math.random() * palette.length)];
+                particles.push({
+                    x: Math.random() * w, y: Math.random() * h,
+                    r: Math.random() * 2.2 + 0.6,
+                    vx: (Math.random() - 0.5) * 0.25,
+                    vy: (Math.random() - 0.5) * 0.25 - 0.06,
+                    opacity: Math.random() * 0.35 + 0.08,
+                    color: color,
+                    phase: Math.random() * Math.PI * 2,
+                    freq: Math.random() * 0.008 + 0.003,
+                });
+            }
+            while (particles.length > newCount) particles.pop();
+        });
     })();
     </script>
 
-    <script src="/static/js/auth.js"></script>
-    <script>Auth.initLanding();</script>
+    <!-- ================================================================
+         3D 场景 — Three.js 浮动二十面体 + 环绕粒子环 + 鼠标响应
+         ================================================================ -->
+    <script type="importmap">
+    { "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }
+    </script>
+    <script type="module">
+    import * as THREE from 'three';
+
+    const canvas = document.getElementById('threeCanvas');
+    const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setSize(window.innerWidth, window.innerHeight);
+
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.5, 80);
+    camera.position.set(0, 0, 12);
+
+    // 光照
+    scene.add(new THREE.AmbientLight(0x5b7a6e, 0.6));
+    const pl1 = new THREE.PointLight(0x5b7a6e, 30, 30); pl1.position.set(5, 3, 5); scene.add(pl1);
+    const pl2 = new THREE.PointLight(0x8a9a7e, 20, 25); pl2.position.set(-4, -2, 3); scene.add(pl2);
+
+    // 主体二十面体
+    const icoGeom = new THREE.IcosahedronGeometry(2.0, 1);
+    const icoMat = new THREE.MeshPhysicalMaterial({
+        color: 0x5b7a6e, metalness: 0.05, roughness: 0.4,
+        transparent: true, opacity: 0.15,
+    });
+    const icoMesh = new THREE.Mesh(icoGeom, icoMat);
+    scene.add(icoMesh);
+
+    // 线框
+    const wireGeom = new THREE.IcosahedronGeometry(2.02, 1);
+    const wireMat = new THREE.MeshBasicMaterial({
+        color: 0x5b7a6e, wireframe: true, transparent: true, opacity: 0.08,
+    });
+    const wireframe = new THREE.Mesh(wireGeom, wireMat);
+    scene.add(wireframe);
+
+    // 环绕粒子环
+    const ringCount = 200;
+    const ringGeom = new THREE.BufferGeometry();
+    const ringPos = new Float32Array(ringCount * 3);
+    const ringData = [];
+    for (let i = 0; i < ringCount; i++) {
+        const theta = Math.random() * Math.PI * 2;
+        const phi = Math.random() * Math.PI * 2;
+        const radius = 3.0 + Math.random() * 2.5;
+        ringPos[i * 3] = Math.cos(theta) * Math.cos(phi) * radius;
+        ringPos[i * 3 + 1] = Math.sin(phi) * radius;
+        ringPos[i * 3 + 2] = Math.sin(theta) * Math.cos(phi) * radius;
+        ringData.push({ baseRadius: radius, theta, phi, speed: Math.random() * 0.3 + 0.08, axisTilt: Math.random() * 0.4, oscillation: Math.random() * 0.5 });
+    }
+    ringGeom.setAttribute('position', new THREE.BufferAttribute(ringPos, 3));
+    const ringMat = new THREE.PointsMaterial({
+        color: 0x5b7a6e, size: 0.04, transparent: true, opacity: 0.5,
+        blending: THREE.AdditiveBlending, depthWrite: false,
+    });
+    const ringPoints = new THREE.Points(ringGeom, ringMat);
+    scene.add(ringPoints);
+
+    // 快速旋转环
+    const fastCount = 80;
+    const fastGeom = new THREE.BufferGeometry();
+    const fastPos = new Float32Array(fastCount * 3);
+    const fastData = [];
+    for (let i = 0; i < fastCount; i++) {
+        const angle = (i / fastCount) * Math.PI * 2;
+        const radius = 2.6;
+        fastPos[i * 3] = Math.cos(angle) * radius;
+        fastPos[i * 3 + 1] = (Math.random() - 0.5) * 0.8;
+        fastPos[i * 3 + 2] = Math.sin(angle) * radius;
+        fastData.push({ yBase: fastPos[i * 3 + 1], yAmp: Math.random() * 0.6, yFreq: Math.random() * 0.02 + 0.01, phase: Math.random() * Math.PI * 2 });
+    }
+    fastGeom.setAttribute('position', new THREE.BufferAttribute(fastPos, 3));
+    const fastMat = new THREE.PointsMaterial({
+        color: 0xa0b890, size: 0.025, transparent: true, opacity: 0.6,
+        blending: THREE.AdditiveBlending, depthWrite: false,
+    });
+    const fastPoints = new THREE.Points(fastGeom, fastMat);
+    scene.add(fastPoints);
+
+    // 鼠标追踪
+    let targetX = 0, targetY = 0, currentX = 0, currentY = 0;
+    window.addEventListener('mousemove', e => {
+        targetX = (e.clientX / window.innerWidth) * 2 - 1;
+        targetY = -(e.clientY / window.innerHeight) * 2 + 1;
+    });
+    window.addEventListener('resize', () => {
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+    });
+
+    // 动画
+    const clock = new THREE.Clock();
+    function animate() {
+        const dt = Math.min(clock.getDelta(), 0.1);
+        const elapsed = performance.now() * 0.001;
+
+        currentX += (targetX - currentX) * 3 * dt;
+        currentY += (targetY - currentY) * 3 * dt;
+
+        icoMesh.rotation.y += 0.15 * dt + currentX * 0.4 * dt;
+        icoMesh.rotation.x += 0.06 * dt + currentY * 0.2 * dt;
+        wireframe.rotation.copy(icoMesh.rotation);
+
+        const floatY = Math.sin(elapsed * 0.5) * 0.4;
+        icoMesh.position.y = floatY;
+        wireframe.position.y = floatY;
+
+        const breathe = 1 + Math.sin(elapsed * 0.7) * 0.04;
+        icoMesh.scale.setScalar(breathe);
+        wireframe.scale.setScalar(breathe);
+
+        const posArr = ringPoints.geometry.attributes.position.array;
+        for (let i = 0; i < ringCount; i++) {
+            const d = ringData[i];
+            d.theta += d.speed * dt;
+            const r = d.baseRadius + Math.sin(elapsed * 0.6 + d.phi) * d.oscillation;
+            posArr[i * 3] = Math.cos(d.theta) * Math.cos(d.phi) * r;
+            posArr[i * 3 + 1] = Math.sin(d.phi) * r + Math.cos(elapsed * 0.8 + d.theta) * d.axisTilt;
+            posArr[i * 3 + 2] = Math.sin(d.theta) * Math.cos(d.phi) * r;
+        }
+        ringPoints.geometry.attributes.position.needsUpdate = true;
+
+        fastPoints.rotation.y += 0.5 * dt;
+        fastPoints.rotation.x += 0.15 * dt;
+        const fposArr = fastPoints.geometry.attributes.position.array;
+        for (let i = 0; i < fastCount; i++) {
+            const d = fastData[i];
+            fposArr[i * 3 + 1] = d.yBase + Math.sin(elapsed * d.yFreq + d.phase) * d.yAmp;
+        }
+        fastPoints.geometry.attributes.position.needsUpdate = true;
+
+        scene.rotation.y += (currentX * 0.15 - scene.rotation.y) * 1.5 * dt;
+        scene.rotation.x += (currentY * 0.08 - scene.rotation.x) * 1.5 * dt;
+
+        renderer.render(scene, camera);
+        requestAnimationFrame(animate);
+    }
+    animate();
+    </script>
+
+    <!-- ================================================================
+         滚动渐现动画
+         ================================================================ -->
+    <script>
+    (function() {
+        const reveals = document.querySelectorAll('.reveal');
+        const observer = new IntersectionObserver(entries => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) entry.target.classList.add('visible');
+            });
+        }, { threshold: 0.15, rootMargin: '0px 0px -40px 0px' });
+
+        reveals.forEach((el, i) => {
+            el.style.transitionDelay = `${i * 0.05}s`;
+            observer.observe(el);
+        });
+
+        // 首屏 hero 立即显示
+        setTimeout(() => {
+            document.querySelectorAll('.hero .reveal').forEach(el => el.classList.add('visible'));
+        }, 100);
+    })();
+    </script>
 </body>
 </html>

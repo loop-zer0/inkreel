@@ -1,7 +1,7 @@
 /** InkReel 主应用 */
 
 const App = {
-    state: {
+    state: Store.create({
         currentNovelId: null,
         currentScriptId: null,
         availableScripts: [],
@@ -17,6 +17,11 @@ const App = {
         currentTransLabel: '🌐 译文',
         currentTransId: null,
         translations: [],
+    }),
+
+    // 统一渲染入口：读取 App.state，刷新所有已注册组件
+    render() {
+        Component.renderAll(App.state);
     },
 
     async init() {
@@ -297,6 +302,7 @@ const App = {
         } catch (_) {
             View.renderLibrary([]);
         }
+        this.render();
     },
 
     async _reloadNovelDetail() {
